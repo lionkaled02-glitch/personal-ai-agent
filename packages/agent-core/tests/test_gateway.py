@@ -249,4 +249,6 @@ class TestPlannerIntegration:
         agent = Agent.create_configured(settings=Settings(), gateway=gateway)
         assert isinstance(agent, Agent)
         assert agent.events is not None
-        assert len(agent.registry.list_tools()) == 1
+        # Phase 2: the configured agent carries the default tool set
+        # (demo tool + calculator/datetime/text_utils/json_utils).
+        assert len(agent.registry.list_tools()) == 5

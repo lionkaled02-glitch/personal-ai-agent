@@ -81,10 +81,47 @@ no hard-coded secrets, no committed credentials, no secrets in logs/events.
 ## 4. Trust boundary & current attack surface
 
 **Default path (mock provider):** the agent runs **entirely in-process**
-with the deterministic mock provider and one harmless mock tool
-(`demo_tool`). It makes **no network calls** and performs **no filesystem
-writes** outside the git-ignored `data/` directory (which is itself not
-written to yet).
+with the deterministic mock provider and the safe built-in tool set
+(`demo_tool`, `calculator`, `datetime`, `text_utils`, `json_utils` — all
+side-effect-free). It makes **no network calls** and performs **no
+filesystem writes** outside the git-ignored `data/` directory (which is
+itself not written to yet).
+
+### Tool runtime security (Phase 2)
+
+- **Permission is a hard precondition of execution.** The Tool Runtime
+  refuses to run any tool unless the caller passes an explicit ALLOWED
+  decision (otherwise `PermissionDeniedError`). The executor obtains that
+  decision from the permission manager; a tool cannot bypass the permission
+  system by calling the registry directly through the agent path.
+- **Model-generated tool arguments are untrusted input.** They are validated
+  against the tool's declared input JSON-Schema *before* execution; invalid
+  input is a structured failure (`TOOL_INPUT_INVALID`), never a coercion.
+- **Tool outputs are validated too.** A tool that lies about its output
+  shape is a structured failure (`TOOL_OUTPUT_INVALID`), not a value handed
+  to the Agent.
+- **Tool faults cannot crash the agent.** Exceptions are contained into a
+  structured `ToolResult` with a machine-readable `error_code`.
+- **Built-in tools are safe by construction.** No shell, subprocess,
+  `eval`/`exec`, dynamic imports, sockets, HTTP clients, or filesystem
+  access anywhere in the core source (verified by
+  `tests/test_security_boundaries.py`). The calculator uses a hand-written
+  parser over an explicit operator allow-list (no exponentiation, no
+  identifiers); all built-in inputs are length-bounded.
+- **Built-in tool inventory (all LOW permission):**
+
+  | Tool | Purpose | Deterministic | Bounds |
+  | --- | --- | --- | --- |
+  | `calculator` | `+ - * / // %`, parens, exponent literals | yes | expression ≤ 200 chars |
+  | `datetime` | current date/time in an IANA timezone | **no** (reads the clock; injectable for tests) | n/a |
+  | `text_utils` | length / word_count / line_count | yes | text ≤ 10,000 chars |
+  | `json_utils` | validate/parse JSON, report shape | yes | text ≤ 100,000 chars |
+
+- **Explicitly NOT present in Phase 2** (forbidden, and test-verified
+  absent): unrestricted subprocess/PowerShell/cmd.exe, arbitrary Python
+  execution, arbitrary filesystem modification, arbitrary network requests,
+  browser/GUI automation, mouse/keyboard control, email, purchases,
+  account/security changes, destructive operations.
 
 **Opt-in path (real provider, Phase 1):** when `MODEL_PROVIDER=openai` is
 set, the agent makes HTTPS calls to the configured provider endpoint.
@@ -112,7 +149,8 @@ Security properties of this path:
   own retry layer is disabled.
 
 **Future surface (NOT IMPLEMENTED, must be handled when built):**
-- Real tools need per-tool scoping (e.g. files confined to `DATA_ROOT`).
+- Side-effecting tools (files, web) need per-tool scoping (e.g. files
+  confined to `DATA_ROOT`) and MEDIUM/HIGH permission levels.
 - Browser / computer control needs sandboxing, command allow/deny policies,
   and mandatory approval (Phases 5 & 7).
 - Any UI/API needs authn/authz and input validation (Phase 9).
@@ -132,7 +170,12 @@ issue (do not post secrets or proof-of-concept exploit details publicly).
 | --- | --- |
 | Permission levels + policy + fail-safe approvals | IMPLEMENTED |
 | Deny-list of tools | IMPLEMENTED |
+| Tool Runtime permission precondition (ALLOWED or `PermissionDeniedError`) | IMPLEMENTED |
 | Controlled tool execution (schema validation, exception containment) | IMPLEMENTED |
+| Tool input + output schema validation with structured failures | IMPLEMENTED |
+| Structured tool results (`error_code` + execution `metadata`) | IMPLEMENTED |
+| Safe built-in tools (LOW, bounded, no side effects) | IMPLEMENTED |
+| Static + behavioral verification that forbidden capabilities are absent | IMPLEMENTED |
 | Credentials via environment variables only; `Settings` secret-free; `.env` ignored; `.env.example` placeholders | IMPLEMENTED |
 | Missing-credential and unknown-provider failures are clean, no network | IMPLEMENTED |
 | Provider error sanitization (no key material, bounded detail) | IMPLEMENTED |

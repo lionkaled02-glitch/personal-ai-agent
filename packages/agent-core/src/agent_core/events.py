@@ -27,15 +27,31 @@ class EventType(StrEnum):
 
     TASK_CREATED = "TASK_CREATED"
     PLAN_CREATED = "PLAN_CREATED"
+    TOOL_REQUESTED = "TOOL_REQUESTED"  # step picked up, before permission check (Phase 2)
     TOOL_STARTED = "TOOL_STARTED"
     TOOL_COMPLETED = "TOOL_COMPLETED"
     TOOL_FAILED = "TOOL_FAILED"
+    TOOL_DENIED = "TOOL_DENIED"  # permission policy or approval refused the tool (Phase 2)
+    TOOL_INPUT_INVALID = "TOOL_INPUT_INVALID"  # input failed the tool's input schema (Phase 2)
+    TOOL_OUTPUT_INVALID = "TOOL_OUTPUT_INVALID"  # output failed the tool's output schema (Phase 2)
     APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
     TASK_PAUSED = "TASK_PAUSED"
     TASK_RESUMED = "TASK_RESUMED"
     TASK_COMPLETED = "TASK_COMPLETED"
     TASK_FAILED = "TASK_FAILED"
     TASK_CANCELLED = "TASK_CANCELLED"
+
+
+#: Default maximum length for text values copied into event payloads
+#: (event data must stay concise and operational — see SECURITY.md).
+EVENT_TEXT_LIMIT = 200
+
+
+def bounded_text(text: str, limit: int = EVENT_TEXT_LIMIT) -> str:
+    """Truncate text for event payloads without altering short values."""
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1] + "…"
 
 
 @dataclass(frozen=True)

@@ -14,10 +14,10 @@ from __future__ import annotations
 
 import uuid
 
+from .builtin_tools import register_default_tools
 from .config import Settings
-from .demo_tools import DemoTool
 from .errors import PlanningError
-from .events import Clock, EventBus, EventType, utc_now
+from .events import Clock, EventBus, EventType, bounded_text, utc_now
 from .executor import BasicVerifier, Executor, Verifier
 from .permissions import ApprovalCallback, PermissionManager
 from .planner import ModelPlanner, Planner
@@ -26,14 +26,6 @@ from .providers.gateway import ModelGateway
 from .providers.mock import MockModelProvider
 from .tasks import Task, TaskState, TaskStep
 from .tools import ToolRegistry
-
-# Bounded length for model-generated text that ends up in event data
-# (event payloads must stay concise and operational — SECURITY.md).
-_EVENT_TEXT_LIMIT = 200
-
-
-def _bounded(text: str) -> str:
-    return text if len(text) <= _EVENT_TEXT_LIMIT else text[: _EVENT_TEXT_LIMIT - 1] + "…"
 
 
 class Agent:
@@ -71,10 +63,11 @@ class Agent:
         """A fully wired agent using only in-process fakes.
 
         No API keys, no network, no external state — used by the demo entry
-        point (apps/backend/src/main.py) and by integration tests.
+        point (apps/backend/src/main.py) and by integration tests. Registers
+        the default tool set (demo tool + Phase 2 safe built-ins).
         """
         registry = ToolRegistry()
-        registry.register(DemoTool())
+        register_default_tools(registry)
         provider = MockModelProvider()
         return cls(
             planner=ModelPlanner(provider),
@@ -102,12 +95,13 @@ class Agent:
 
         Pass a pre-built ``gateway`` to reuse/inspect one (e.g. to log the
         active provider name); otherwise it is built from ``settings``.
+        Registers the default tool set (demo tool + Phase 2 safe built-ins).
         """
         resolved = settings if settings is not None else Settings.from_env()
         if gateway is None:
             gateway = build_gateway(resolved)
         registry = ToolRegistry()
-        registry.register(DemoTool())
+        register_default_tools(registry)
         return cls(
             planner=ModelPlanner(gateway),
             registry=registry,
@@ -156,7 +150,7 @@ class Agent:
                 "steps": [
                     {
                         "tool_name": step.tool_name,
-                        "description": _bounded(step.description),
+                        "description": bounded_text(step.description),
                     }
                     for step in plan.steps
                 ],

@@ -10,26 +10,40 @@ Phase 1 (IMPLEMENTED): model gateway (error normalization + safe retry),
 configuration-driven provider selection, and a real OpenAI provider adapter
 (optional ``openai`` extra, lazy SDK import).
 
-Everything else (real tools, UI, browser/computer control, voice, media
-generation, RAG/memory) is PLANNED — see ARCHITECTURE.md and ROADMAP.md at
-the repository root for what exists and what does not.
+Phase 2 (IMPLEMENTED): the tool runtime (permission-gated, schema-validated,
+metadata-carrying tool execution with structured lifecycle events) and a set
+of safe, deterministic built-in tools (calculator, date/time, text utils,
+JSON utils).
+
+Everything else (real side-effect tools, UI, browser/computer control, voice,
+media generation, RAG/memory) is PLANNED — see ARCHITECTURE.md and
+ROADMAP.md at the repository root for what exists and what does not.
 """
 
 from .agent import Agent
+from .builtin_tools import (
+    CalculatorTool,
+    DateTimeTool,
+    JsonUtilsTool,
+    TextUtilsTool,
+    register_default_tools,
+)
 from .config import Settings
 from .demo_tools import DEMO_TOOL_NAME, DemoTool
 from .errors import (
     AgentCoreError,
+    PermissionDeniedError,
     PlanningError,
     ProviderConfigurationError,
     ProviderError,
     TaskStateError,
+    ToolAlreadyRegisteredError,
     ToolExecutionError,
     ToolInputError,
     ToolNotFoundError,
     TransientProviderError,
 )
-from .events import AgentEvent, EventBus, EventType, utc_now
+from .events import AgentEvent, EventBus, EventType, bounded_text, utc_now
 from .executor import BasicVerifier, Executor, Verifier, VerifyResult
 from .permissions import (
     ApprovalCallback,
@@ -56,9 +70,10 @@ from .providers import (
 )
 from .schema import validate_against_schema
 from .tasks import StepStatus, Task, TaskState, TaskStep
+from .tool_runtime import ToolInvocation, ToolRuntime
 from .tools import Tool, ToolRegistry, ToolResult, ToolSpec
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "DEMO_TOOL_NAME",
@@ -69,12 +84,15 @@ __all__ = [
     "ApprovalCallback",
     "ApprovalRequest",
     "BasicVerifier",
+    "CalculatorTool",
     "Capability",
     "ChatMessage",
+    "DateTimeTool",
     "DemoTool",
     "EventBus",
     "EventType",
     "Executor",
+    "JsonUtilsTool",
     "MockModelProvider",
     "ModelGateway",
     "ModelPlanner",
@@ -83,6 +101,7 @@ __all__ = [
     "ModelResponse",
     "OpenAIProvider",
     "PermissionDecision",
+    "PermissionDeniedError",
     "PermissionLevel",
     "PermissionManager",
     "PermissionPolicy",
@@ -98,20 +117,26 @@ __all__ = [
     "TaskState",
     "TaskStateError",
     "TaskStep",
+    "TextUtilsTool",
     "Tool",
+    "ToolAlreadyRegisteredError",
     "ToolDescriptor",
     "ToolExecutionError",
     "ToolInputError",
+    "ToolInvocation",
     "ToolNotFoundError",
     "ToolRegistry",
     "ToolResult",
+    "ToolRuntime",
     "ToolSpec",
     "TransientProviderError",
     "Verifier",
     "VerifyResult",
+    "bounded_text",
     "build_gateway",
     "create_provider",
     "plan_json_schema",
+    "register_default_tools",
     "utc_now",
     "validate_against_schema",
 ]
