@@ -22,10 +22,19 @@ search_files) operate strictly inside an explicitly configured workspace
 boundary enforced by :class:`agent_core.workspace.Workspace`. There is still
 NO unrestricted shell/subprocess or arbitrary code execution.
 
-Everything else (real side-effect tools beyond the workspace boundary, UI,
-browser/computer control, voice, media generation, RAG/memory) is PLANNED —
-see ARCHITECTURE.md and ROADMAP.md at the repository root for what exists and
-what does not.
+Phase 4 (IMPLEMENTED): document processing & knowledge foundation. Six
+formats (TXT, Markdown, PDF, DOCX, PPTX, XLSX) parse — via mature libraries
+isolated behind the ``DocumentParser`` interface — into a normalized,
+deterministic document model; documents chunk deterministically; and a
+provider-neutral :class:`agent_core.documents.KnowledgeStore` performs
+lexical retrieval. Four tools (inspect_document, extract_document,
+index_document, search_documents) are permission-gated and read only through
+the Phase 3 workspace boundary. Document content is untrusted DATA, never
+instructions.
+
+Everything else (UI, browser/computer control, voice, media generation,
+full long-term memory, vector retrieval) is PLANNED — see ARCHITECTURE.md
+and ROADMAP.md at the repository root for what exists and what does not.
 """
 
 from .agent import Agent
@@ -38,6 +47,23 @@ from .builtin_tools import (
 )
 from .config import Settings
 from .demo_tools import DEMO_TOOL_NAME, DemoTool
+from .document_tools import (
+    DOCUMENT_TOOL_NAMES,
+    ExtractDocumentTool,
+    IndexDocumentTool,
+    InspectDocumentTool,
+    SearchDocumentsTool,
+    register_document_tools,
+)
+from .documents import (
+    Document,
+    DocumentChunk,
+    DocumentError,
+    DocumentLimits,
+    DocumentSection,
+    KnowledgeStore,
+    RetrievalIndex,
+)
 from .errors import (
     AgentCoreError,
     PermissionDeniedError,
@@ -94,10 +120,11 @@ from .workspace_tools import (
     register_workspace_tools,
 )
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "DEMO_TOOL_NAME",
+    "DOCUMENT_TOOL_NAMES",
     "SUPPORTED_PROVIDERS",
     "Agent",
     "AgentCoreError",
@@ -113,11 +140,20 @@ __all__ = [
     "DateTimeTool",
     "DeleteFileTool",
     "DemoTool",
+    "Document",
+    "DocumentChunk",
+    "DocumentError",
+    "DocumentLimits",
+    "DocumentSection",
     "EventBus",
     "EventType",
     "Executor",
+    "ExtractDocumentTool",
     "FileInfoTool",
+    "IndexDocumentTool",
+    "InspectDocumentTool",
     "JsonUtilsTool",
+    "KnowledgeStore",
     "ListDirectoryTool",
     "MockModelProvider",
     "ModelGateway",
@@ -139,6 +175,8 @@ __all__ = [
     "ProviderConfigurationError",
     "ProviderError",
     "ReadTextFileTool",
+    "RetrievalIndex",
+    "SearchDocumentsTool",
     "SearchFilesTool",
     "Settings",
     "StepStatus",
@@ -171,6 +209,7 @@ __all__ = [
     "create_provider",
     "plan_json_schema",
     "register_default_tools",
+    "register_document_tools",
     "register_workspace_tools",
     "utc_now",
     "validate_against_schema",

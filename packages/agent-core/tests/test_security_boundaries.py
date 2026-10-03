@@ -50,6 +50,11 @@ FORBIDDEN_MODULES = {
     "httpx",
 }
 
+# Phase 4: the only third-party packages the document layer may import.
+# Anything else must be stdlib (checked against sys.stdlib_module_names) —
+# parsers are parsing-only tools, never execution or network facilities.
+DOCUMENT_ALLOWED_THIRD_PARTY = {"pypdf", "docx", "pptx", "openpyxl", "pydantic"}
+
 _IMPORT_RE = re.compile(r"^\s*(?:import|from)\s+([A-Za-z_][A-Za-z0-9_.]*)", re.MULTILINE)
 
 
@@ -82,6 +87,24 @@ class TestStaticSourceBoundaries:
                 if re.search(pattern, source):
                     offenders.append(f"{path.name}: {pattern}")
         assert offenders == []
+
+    def test_document_layer_third_party_imports_whitelisted(self) -> None:
+        """Phase 4: documents/ + document_tools/ may only import stdlib,
+        the four parser libraries, and pydantic (core dependency)."""
+        import sys
+
+        offenders = []
+        for sub in ("documents", "document_tools"):
+            for path in sorted((SRC / sub).rglob("*.py")):
+                source = path.read_text(encoding="utf-8")
+                for match in _IMPORT_RE.finditer(source):
+                    top = match.group(1).split(".")[0]
+                    if top in sys.stdlib_module_names or top == "agent_core":
+                        continue
+                    if top in DOCUMENT_ALLOWED_THIRD_PARTY:
+                        continue
+                    offenders.append(f"{path.name}: {match.group(1)}")
+        assert offenders == [], f"non-whitelisted import in document layer: {offenders}"
 
 
 class TestCalculatorInjections:

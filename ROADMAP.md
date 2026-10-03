@@ -123,30 +123,95 @@ HIGH + fail-safe approval; the default suite stays offline and deterministic.
 
 ---
 
-## Phase 4 — Memory & RAG
+## Phase 4 — Document processing & knowledge foundation ✅ IMPLEMENTED
 
-Persistent memory and retrieval over documents. (Originally the planned
-Phase 3; rescheduled after the workspace tools phase.)
+A safe, modular layer on top of the Phase 3 workspace boundary: the agent
+can **read and understand** common document types. Six formats (TXT,
+Markdown, PDF, DOCX, PPTX, XLSX) are parsed — mature libraries isolated
+behind a replaceable parser interface — into a normalized, deterministic,
+serializable document model, chunked deterministically, and indexed for
+**provider-neutral, deterministic lexical retrieval**. All document content
+is untrusted **data**, never instructions. See [SECURITY.md](SECURITY.md)
+for the security model and [ARCHITECTURE.md](ARCHITECTURE.md) §4 (D15–D17)
+for the design decisions.
 
 | Item | Status |
 | --- | --- |
-| Document ingestion + chunking | NOT IMPLEMENTED |
-| Vector store + embeddings (via `ModelProvider.embed`) | NOT IMPLEMENTED |
-| Retrieval tool + long/short-term memory | NOT IMPLEMENTED |
+| Supported formats: TXT, Markdown, PDF (pypdf), DOCX (python-docx), PPTX (python-pptx), XLSX (openpyxl) | IMPLEMENTED |
+| `DocumentParser` interface + registry/factory; core model coupled to no parser library; optional `docs` extra, lazy imports, structured `parser_unavailable` | IMPLEMENTED |
+| Normalized model: `Document` / `DocumentSection` / `DocumentChunk` (Pydantic, deterministic ids, serializable) | IMPLEMENTED |
+| Stable document error codes (`unsupported_document_type`, `document_not_found`, `document_too_large`, `document_corrupt`, `extraction_failed`, `decode_failed`, `parser_limit_exceeded`, `invalid_document`, `security_violation`, …) | IMPLEMENTED |
+| Configurable limits (`DOCUMENT_*`) with fail-safe behavior; every truncation explicitly reported, never silent | IMPLEMENTED |
+| Normalization: document order, page/slide/sheet locations, headings, deterministic table rendering, newline/encoding handling, extraction warnings | IMPLEMENTED |
+| Deterministic chunking (configurable size + overlap, section-aware, count-capped, metadata-preserving) | IMPLEMENTED |
+| `KnowledgeStore` behind the `RetrievalIndex` protocol: add/replace/remove, grounded `search` with deterministic TF/IDF ranking, document filter, bounded results — **lexical only, no embeddings, no external model** | IMPLEMENTED |
+| Tools via the Tool Runtime: `inspect_document` (LOW), `extract_document` (LOW), `index_document` (MEDIUM), `search_documents` (LOW) | IMPLEMENTED |
+| All document paths through the Phase 3 `Workspace` boundary; content is data — nothing executed, no new subprocess/shell/network capability (static + behavioral tests) | IMPLEMENTED |
+| Observability: events carry ids/relative paths/counts/status, never document content; bounded payloads | IMPLEMENTED |
+| Vector/semantic retrieval (embeddings) — future, swappable via `RetrievalIndex` | NOT IMPLEMENTED (future) |
+| Persistent long-term memory | NOT IMPLEMENTED (future, Phase 5) |
+| Document/presentation *generation* (writing new documents) | NOT IMPLEMENTED (future, Phase 6) |
+
+**Acceptance (met):** all six formats parse to the normalized model from
+deterministic fixtures; malformed/corrupt/unsupported/oversized inputs fail
+with structured errors (no crashes); limits produce explicitly reported
+truncation; chunking and retrieval are deterministic; document content is
+never interpreted as instructions and the document layer introduces no
+subprocess/shell/network capability; denied `index_document` performs no
+mutation; the full Phase 0–3 suite still passes.
+
+**Known limitations (by design or documented):**
+- No parser timeout: a pathologically encoded file can make pypdf slow.
+  A Python-level timeout would need threads/subprocesses — both forbidden
+  here — so input size limits bound the work instead.
+- PDF: text layer only — scanned/image-only PDFs extract as empty sections
+  (no OCR). `/Title` metadata is best-effort.
+- DOCX: main body only (headers/footers/footnotes are separate parts);
+  heading detection relies on Word heading styles.
+- PPTX: top-level shape text frames only — text inside grouped shapes is
+  not recursed into.
+- XLSX: cached values only — formulas are deliberately never evaluated
+  (safety), so cells without a cached value are empty; images/charts are
+  not extracted. Row/column caps per sheet (10,000 × 200) with reported
+  truncation.
+- Retrieval is lexical (token-based) by design — no semantic matching;
+  ranking quality is commensurate.
+- The `KnowledgeStore` is in-memory: the index does not survive a process
+  restart (durability is Phase 5).
+- Chunk overlap is best-effort: carried tails are trimmed to fit the chunk
+  size, so the *effective* overlap can be smaller than configured for
+  large units.
 
 ---
 
-## Phase 5 — Document & presentation generation
+## Phase 5 — Memory & RAG
+
+Persistent memory and semantic retrieval over documents. (Originally the
+planned Phase 4; renumbered after the Phase 4 document foundation.) The
+Phase 4 `RetrievalIndex` protocol is the seam this phase builds on.
 
 | Item | Status |
 | --- | --- |
-| Document analysis (PDF/DOCX/…) | NOT IMPLEMENTED |
+| Vector store + embeddings (via `ModelProvider.embed`) as a `RetrievalIndex` implementation | NOT IMPLEMENTED |
+| Retrieval tool upgrade (semantic search) + long/short-term memory | NOT IMPLEMENTED |
+| Persistent, durable store (survives process restarts) | NOT IMPLEMENTED |
+
+---
+
+## Phase 6 — Document & presentation generation
+
+| Item | Status |
+| --- | --- |
 | Presentation generation (slides) | NOT IMPLEMENTED |
+| Document generation (writing new DOCX/PDF/…) | NOT IMPLEMENTED |
 | Output written under `data/generated` | NOT IMPLEMENTED |
 
+(Document *analysis* — reading/parsing PDF/DOCX/… — is IMPLEMENTED in
+Phase 4.)
+
 ---
 
-## Phase 5 — Browser automation
+## Phase 7 — Browser automation
 
 | Item | Status |
 | --- | --- |
@@ -156,7 +221,7 @@ Phase 3; rescheduled after the workspace tools phase.)
 
 ---
 
-## Phase 7 — Voice
+## Phase 8 — Voice
 
 | Item | Status |
 | --- | --- |
@@ -165,7 +230,7 @@ Phase 3; rescheduled after the workspace tools phase.)
 
 ---
 
-## Phase 7 — Computer control
+## Phase 9 — Computer control
 
 | Item | Status |
 | --- | --- |
@@ -178,7 +243,7 @@ Phase 3; rescheduled after the workspace tools phase.)
 
 ---
 
-## Phase 9 — Media generation
+## Phase 10 — Media generation
 
 | Item | Status |
 | --- | --- |
@@ -188,7 +253,7 @@ Phase 3; rescheduled after the workspace tools phase.)
 
 ---
 
-## Phase 10 — UI, API, and the Task Manager layer
+## Phase 11 — UI, API, and the Task Manager layer
 
 The user-facing shell and durable task management.
 

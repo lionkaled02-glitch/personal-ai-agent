@@ -44,3 +44,8 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = "httpx"
 ignore_missing_imports = true
+
+# openpyxl (Phase 4 document parsing, optional extra) ships no py.typed.
+[[tool.mypy.overrides]]
+module = "openpyxl.*"
+ignore_missing_imports = true
