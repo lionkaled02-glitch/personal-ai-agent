@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-core"
+version = "0.2.0"
+description = "Core abstractions for a modular personal autonomous AI agent: tasks, planner, executor, tools, permissions, events, model gateway, model providers."
+readme = "README.md"
+requires-python = ">=3.11"
+# Deliberately minimal: the core must not depend on any vendor SDK.
+dependencies = ["pydantic>=2.7,<3"]
+
+# Real provider adapters are optional extras. Installing one is required
+# only when you actually select that provider (MODEL_PROVIDER=...).
+[project.optional-dependencies]
+openai = ["openai>=1.40,<3"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_core"]
