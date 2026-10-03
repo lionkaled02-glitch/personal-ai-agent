@@ -19,10 +19,18 @@ This repository currently contains:
   (list/read/write/create-dir/copy/move/delete/file-info/search) that work
   **only inside an explicitly configured workspace boundary**
   (`WORKSPACE_ROOT`). No shell, subprocess, or arbitrary code execution.
+- **Phase 4: document processing & knowledge foundation** — parses TXT,
+  Markdown, PDF, DOCX, PPTX, and XLSX (mature libraries behind a replaceable
+  parser interface) into a normalized, deterministic document model;
+  deterministic bounded chunking; provider-neutral **lexical** retrieval in
+  an in-memory knowledge store; four permission-gated tools
+  (`inspect_document`, `extract_document`, `index_document`,
+  `search_documents`) that read **only** through the Phase 3 workspace
+  boundary. Document content is untrusted data, never instructions.
 
 Everything else (tools beyond the workspace boundary, web access, browser,
-computer control, voice, media, memory/RAG) is deliberately NOT IMPLEMENTED
-yet.
+computer control, voice, media, long-term memory, vector/semantic retrieval)
+is deliberately NOT IMPLEMENTED yet.
 
 > See [ROADMAP.md](ROADMAP.md) and [ARCHITECTURE.md](ARCHITECTURE.md) for
 > exactly what exists and what does not.
@@ -75,6 +83,28 @@ A single Python package, `agent-core`, that proves the architecture works:
   and symlink/junction escapes are rejected; sizes and result counts are
   bounded; writes are atomic; `delete_file` is HIGH-permission and requires
   explicit approval. See SECURITY.md for the safety model.
+- **Document processing & knowledge foundation (Phase 4)** — a
+  `DocumentParser` interface + registry with built-in parsers for TXT,
+  Markdown, PDF (pypdf), DOCX (python-docx), PPTX (python-pptx), and XLSX
+  (openpyxl); binary parsers use optional libraries imported lazily (missing
+  library ⇒ structured `parser_unavailable`, never a crash). Parsers produce
+  a normalized, deterministic, serializable model (`Document` /
+  `DocumentSection` / `DocumentChunk`) with page/slide/sheet locations,
+  headings, and deterministic table rendering. All extraction is bounded
+  (input bytes, extracted chars, pages/slides/sheets, sections, chunks) and
+  every cap is **explicitly reported** — truncation is never silent.
+  Chunking is deterministic (configurable size + overlap, section-aware,
+  count-capped). Retrieval is a provider-neutral, deterministic **lexical**
+  `KnowledgeStore` (token-based TF/IDF ranking, no embeddings, no external
+  model) behind the `RetrievalIndex` protocol, so a future vector store can
+  be swapped in without rewriting the model or the tools. Four tools are
+  permission-gated through the Tool Runtime: `inspect_document` (LOW,
+  metadata only), `extract_document` (LOW, normalized text + structure),
+  `index_document` (MEDIUM — internal knowledge mutation),
+  `search_documents` (LOW, grounded, bounded results). All document I/O goes
+  through the Phase 3 `Workspace` boundary, and document content is treated
+  as untrusted data — it is never executed or interpreted as instructions.
+  See SECURITY.md for the full security model.
 - **One mock tool** (`demo_tool`) used for the end-to-end tests.
 
 The **first end-to-end flow** is implemented and tested:
@@ -109,6 +139,9 @@ User Request → Agent → Planner → Tool Registry → Mock Tool → Result �
 │       │   ├── builtin_tools/   # safe built-in tools (calc, datetime, text, json)
 │       │   ├── workspace.py     # workspace boundary + fail-closed path resolution
 │       │   ├── workspace_tools/ # nine scoped filesystem tools (Phase 3)
+│       │   ├── documents/       # normalized model, parser registry, chunking,
+│       │   │                    #   retrieval (Phase 4)
+│       │   ├── document_tools/  # inspect/extract/index/search tools (Phase 4)
 │       │   ├── tool_runtime.py  # ToolRuntime (permission-gated execution)
 │       │   ├── errors.py        # exception hierarchy
 │       │   └── providers/
@@ -197,9 +230,11 @@ pytest            # full test suite
 
 ## Not implemented yet (by design)
 
-A second real provider adapter (Anthropic, local models), streaming/
-embeddings, tools that leave the workspace boundary (web fetch/search,
-shell/command execution), computer control, browser automation, voice,
-image/video generation, RAG, memory, presentation generation, and a user
-interface are all **future phases**. Adding them is explicitly gated in
+A second real provider adapter (Anthropic, local models), streaming,
+semantic/vector retrieval over documents (the Phase 4 retrieval is lexical
+by design and swappable via the `RetrievalIndex` protocol), tools that leave
+the workspace boundary (web fetch/search, shell/command execution), computer
+control, browser automation, voice, image/video generation, long-term
+memory, presentation/document generation, and a user interface are all
+**future phases**. Adding them is explicitly gated in
 [ROADMAP.md](ROADMAP.md).

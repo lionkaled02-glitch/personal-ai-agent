@@ -81,7 +81,7 @@ no hard-coded secrets, no committed credentials, no secrets in logs/events.
 - **Workspace tool events carry only relative workspace paths** (POSIX
   style) and metadata (size, count, error code) — never the absolute host
   path and never directory listings of the host.
-- A future persistent audit log (Phase 10) will serialize
+- A future persistent audit log (Phase 11) will serialize
   `AgentEvent.to_dict()` — the on-disk format is fixed now so it can be made
   append-only and redaction-aware later.
 
@@ -92,10 +92,13 @@ no hard-coded secrets, no committed credentials, no secrets in logs/events.
 **Default path (mock provider):** the agent runs **entirely in-process**
 with the deterministic mock provider and the default tool set (Phase 2
 built-ins `demo_tool`, `calculator`, `datetime`, `text_utils`, `json_utils`,
-all side-effect-free, plus the Phase 3 workspace file tools). It makes **no
-network calls**. Filesystem access is confined to the configured workspace
-root (`WORKSPACE_ROOT`, default `data/workspace` — git-ignored); nothing
-outside that root can be read, written, or deleted through any tool.
+all side-effect-free, plus the Phase 3 workspace file tools and the Phase 4
+document tools). It makes **no network calls**. Filesystem access is
+confined to the configured workspace root (`WORKSPACE_ROOT`, default
+`data/workspace` — git-ignored); nothing outside that root can be read,
+written, or deleted through any tool. Document tools read only through that
+same boundary, and documents are untrusted *data* — their content is never
+executed or treated as instructions (see the Phase 4 subsection below).
 
 ### Tool runtime security (Phase 2)
 
@@ -221,13 +224,71 @@ Security properties of this path:
   retried, at most `MODEL_MAX_RETRIES` times with capped backoff; the SDK's
   own retry layer is disabled.
 
+### Document processing security (Phase 4)
+
+Phase 4 adds document parsing and lexical knowledge retrieval. The security
+model:
+
+- **Document content is untrusted data, never instructions.** Parsers extract
+  text and structure only. Nothing found in a document is executed — no VBA
+  macros, no embedded scripts (PDF JavaScript, Office embedded objects), no
+  shell/PowerShell/Python, no external programs. Text that *looks like*
+  commands ("run this", "ignore previous instructions", `__import__`, …) is
+  stored and returned **verbatim as data** and is never interpreted by the
+  agent core. Behavioral tests feed injection-style documents through the
+  tools and assert nothing executes.
+- **Parser libraries are parsing-only and optional.** The four binary
+  parsers (pypdf, python-docx, python-pptx, openpyxl) are used strictly to
+  read structure/text. XLSX is opened `read_only=True, data_only=True,
+  keep_links=False` — cached cell values only, **formulas are never
+  evaluated**, external links are dropped. PDF extraction is text-only;
+  links/URIs are never followed. The libraries are an optional `docs` extra,
+  imported lazily inside `_extract`; a missing library yields a structured
+  `parser_unavailable` error. A static test whitelists every third-party
+  import in the document layer (stdlib + the four parser libraries +
+  pydantic) so no new capability can sneak in.
+- **No new execution or network capability.** The Phase 4 modules introduce
+  no subprocess, shell, `eval`/`exec`, `ctypes`, sockets, or HTTP clients —
+  the existing static source-boundary tests cover them, and the document
+  layer passes.
+- **All document paths go through the Phase 3 `Workspace` boundary.**
+  `inspect/extract/index` resolve every path via `Workspace.resolve()`
+  before any read: absolute paths, `../` escapes, and symlink/junction
+  escapes are rejected with the same structured codes; containment is
+  fail-closed. Document tools never receive or return host paths.
+- **Bounded processing, explicit truncation.** `DocumentLimits` (from
+  `DOCUMENT_*` settings) cap raw input bytes (otherwise
+  `document_too_large`), total extracted characters, pages/slides/sheets,
+  sections, chunk count, query length, and result count. Exceeding a
+  capacity cap produces `Document.truncated=True` + a recorded warning —
+  truncation is never silent; exceeding a hard per-unit cap is
+  `parser_limit_exceeded`. No unbounded memory growth on malformed or huge
+  documents.
+- **Permission-gated tools.** `inspect_document`, `extract_document`, and
+  `search_documents` are LOW; `index_document` is MEDIUM (it mutates
+  internal knowledge state) and goes through the same fail-safe approval
+  path as workspace mutations — a denied index performs no store mutation.
+  All tools run only through the Tool Runtime with an explicit ALLOWED
+  decision, schema-validated inputs/outputs, and structured failures
+  (tool failures never crash the agent process).
+- **Observability stays bounded.** Events and tool outputs carry
+  document/chunk ids, workspace-relative source paths, type, counts, sizes,
+  durations, status, and error codes. `inspect_document` deliberately
+  returns metadata only; full text is returned solely by the explicit
+  `extract_document` tool (which the caller chose to invoke). No document
+  content or sensitive extracted text is logged beyond tool outputs, and
+  event payloads remain bounded by `bounded_value`.
+
 **Future surface (NOT IMPLEMENTED, must be handled when built):**
 - Side-effecting tools beyond the workspace boundary (web fetch/search)
   need per-tool scoping and MEDIUM/HIGH permission levels; any process or
   shell execution would be HIGH and require an explicit policy.
 - Browser / computer control needs sandboxing, command allow/deny policies,
-  and mandatory approval (Phases 6 & 8).
-- Any UI/API needs authn/authz and input validation (Phase 10).
+  and mandatory approval (Phases 7 & 9).
+- Any UI/API needs authn/authz and input validation (Phase 11).
+- Vector/semantic retrieval (embeddings) and persistent memory must preserve
+  the lexical-index guarantees above (deterministic, bounded, provider-
+  neutral) when built on the `RetrievalIndex` protocol.
 
 ---
 
@@ -253,6 +314,12 @@ issue (do not post secrets or proof-of-concept exploit details publicly).
 | Workspace file tools (9, scoped, LOW/MEDIUM/HIGH, bounded, atomic writes) | IMPLEMENTED |
 | Delete is HIGH + fail-safe approval; denial never executes the filesystem action | IMPLEMENTED |
 | Event payload bounding (`bounded_value`); no file contents / host paths in events | IMPLEMENTED |
+| Document content treated as untrusted data — never executed or interpreted as instructions | IMPLEMENTED |
+| Document layer third-party import whitelist (parsing-only libs, no new exec/network capability) | IMPLEMENTED |
+| Document tools resolve every path through the Phase 3 workspace boundary (fail-closed) | IMPLEMENTED |
+| Document limits (input bytes, extraction, containers, sections, chunks, query, results) with explicit truncation reporting | IMPLEMENTED |
+| Document tool permissions (inspect/extract/search LOW, index MEDIUM); denied index performs no mutation | IMPLEMENTED |
+| No document content in logs/events beyond explicit tool outputs; bounded payloads | IMPLEMENTED |
 | Static + behavioral verification that forbidden capabilities are absent | IMPLEMENTED |
 | Credentials via environment variables only; `Settings` secret-free; `.env` ignored; `.env.example` placeholders | IMPLEMENTED |
 | Missing-credential and unknown-provider failures are clean, no network | IMPLEMENTED |
@@ -261,6 +328,6 @@ issue (do not post secrets or proof-of-concept exploit details publicly).
 | Untrusted model output: strict JSON + plan schema + tool allow-list | IMPLEMENTED |
 | Operational-only events/logs, bounded payloads | IMPLEMENTED |
 | Synchronous human approval channel | PLANNED (wire-up in Phase 2) |
-| Persistent, redaction-aware audit log | PLANNED (Phase 10) |
-| Sandboxing / command policies for real tools | NOT IMPLEMENTED (Phases 2/6/8) |
-| UI/API authentication | NOT IMPLEMENTED (Phase 10) |
+| Persistent, redaction-aware audit log | PLANNED (Phase 11) |
+| Sandboxing / command policies for real tools | NOT IMPLEMENTED (Phases 2/7/9) |
+| UI/API authentication | NOT IMPLEMENTED (Phase 11) |

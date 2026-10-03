@@ -73,13 +73,20 @@ All implemented code lives in the single package
 | `providers/gateway.py` | `ModelGateway` | `ModelProvider` decorator: normalizes provider errors, retries transient failures with bounded exponential backoff, passes structured responses through unchanged. Vendor-agnostic. | IMPLEMENTED |
 | `providers/factory.py` | `create_provider`, `build_gateway`, `SUPPORTED_PROVIDERS` | Configuration-driven provider selection (`MODEL_PROVIDER`) + gateway construction. The only place that knows provider names. | IMPLEMENTED |
 | `providers/openai_provider.py` | `OpenAIProvider` | Real Chat Completions adapter (optional `openai` extra, lazy SDK import). Env credentials, timeouts, sanitized error mapping. | IMPLEMENTED |
-| `config.py` | `Settings` | Env-based configuration (`AGENT_NAME`, `LOG_LEVEL`, `DATA_ROOT`, `MODEL_PROVIDER`, `MODEL_NAME`, `MODEL_TIMEOUT_S`, `MODEL_MAX_RETRIES`, `WORKSPACE_ROOT`, `WORKSPACE_MAX_*` limits). No secrets. | IMPLEMENTED |
+| `config.py` | `Settings` | Env-based configuration (`AGENT_NAME`, `LOG_LEVEL`, `DATA_ROOT`, `MODEL_PROVIDER`, `MODEL_NAME`, `MODEL_TIMEOUT_S`, `MODEL_MAX_RETRIES`, `WORKSPACE_ROOT`, `WORKSPACE_MAX_*` limits, `DOCUMENT_MAX_*` / `DOCUMENT_CHUNK_*` limits). No secrets. | IMPLEMENTED |
 | `demo_tools.py` | `DemoTool` | The demo tool (`demo_tool`, LOW permission) used to prove the end-to-end flow. | IMPLEMENTED |
 | `builtin_tools/` | `CalculatorTool`, `DateTimeTool`, `TextUtilsTool`, `JsonUtilsTool`, `register_default_tools` | Safe, deterministic, side-effect-free built-in tools (all LOW permission, bounded input). Date/time is declared non-deterministic. No shell/network. | IMPLEMENTED |
 | `workspace.py` | `Workspace`, `WorkspaceError`, `WorkspaceLimits` | The workspace boundary: turns model-supplied (workspace-relative) paths into real filesystem paths with fail-closed resolution (no absolute paths, no `../` escape, no symlink/junction escape, no host-path leakage). | IMPLEMENTED |
 | `workspace_tools/` | `ListDirectoryTool`, `ReadTextFileTool`, `WriteTextFileTool`, `CreateDirectoryTool`, `CopyFileTool`, `MoveFileTool`, `DeleteFileTool`, `FileInfoTool`, `SearchFilesTool`, `register_workspace_tools` | Nine filesystem tools scoped to the workspace boundary (LOW/MEDIUM/HIGH permission, bounded sizes/results, structured error codes, atomic writes, no shell/subprocess). See SECURITY.md for the safety model. | IMPLEMENTED |
-| `errors.py` | `AgentCoreError` + subclasses | Single exception hierarchy so agent failures are catchable (incl. `PermissionDeniedError`, `ToolAlreadyRegisteredError`, `WorkspaceError`). | IMPLEMENTED |
-| `agent.py` | `Agent` | Facade that wires planner + registry + permissions + events + executor into `run(request)`. `create_demo`/`create_configured` register the default tool set **plus the Phase 3 workspace tools**. | IMPLEMENTED |
+| `documents/models.py` | `Document`, `DocumentSection`, `DocumentChunk`, `SearchResult` + deterministic id helpers | The normalized document model: Pydantic, deterministic, serializable. Workspace-relative `source_path` only; stable ids derived from inputs; page/slide/sheet locations; extraction warnings + stats + truncation flag. | IMPLEMENTED |
+| `documents/errors.py` | `DocumentError` + stable codes | Structured document-domain failures: `unsupported_document_type`, `document_not_found`, `document_too_large`, `document_corrupt`, `extraction_failed`, `decode_failed`, `parser_limit_exceeded`, `invalid_document`, `security_violation` (+ `parser_unavailable`, `invalid_query`, `invalid_input`, `document_not_indexed`, `chunk_not_found`). | IMPLEMENTED |
+| `documents/limits.py` | `DocumentLimits` | Frozen, validated safety limits (input bytes, extracted chars, pages/slides/sheets, sections, chunks, chunk size/overlap, search results, query chars). Fail-safe: limits either reject (structured error) or produce an **explicitly reported** truncation. | IMPLEMENTED |
+| `documents/parsers/` | `DocumentParser`, `ParserRegistry`, `RawSection`, `ExtractedContent`, `default_registry`, built-in parsers (text, markdown, pdf, docx, pptx, xlsx) | The parser seam: `_extract` (library-specific) → shared `normalize` (limits, truncation reporting, stats, ids). Binary parsers lazy-import their optional library (pypdf / python-docx / python-pptx / openpyxl) and fail with `parser_unavailable` when it is missing. Content is data only — nothing is ever executed. | IMPLEMENTED |
+| `documents/chunking.py` | `split_text`, `chunk_document`, `ChunkingResult` | Deterministic bounded chunking: paragraph-aware, hard-splits oversized paragraphs with overlap carry, count-capped with an explicit truncation report. Preserves document/section ids and location metadata on every chunk. No embeddings. | IMPLEMENTED |
+| `documents/retrieval.py` | `KnowledgeStore`, `RetrievalIndex` (protocol) | Provider-neutral in-memory lexical index: add/replace/remove documents + chunks, `search` with deterministic TF/IDF token ranking, document filtering, and result caps. The protocol is the seam a future vector store implements without touching the model or tools. | IMPLEMENTED |
+| `document_tools/` | `InspectDocumentTool`, `ExtractDocumentTool`, `IndexDocumentTool`, `SearchDocumentsTool`, `register_document_tools` | Four permission-gated tools over the document layer (inspect/extract/search LOW, index MEDIUM). All paths resolve through the Phase 3 `Workspace`; inputs/outputs schema-validated; failures are structured `ToolResult`s, never crashes. | IMPLEMENTED |
+| `errors.py` | `AgentCoreError` + subclasses | Single exception hierarchy so agent failures are catchable (incl. `PermissionDeniedError`, `ToolAlreadyRegisteredError`, `WorkspaceError`, `DocumentError`). | IMPLEMENTED |
+| `agent.py` | `Agent` | Facade that wires planner + registry + permissions + events + executor (+ knowledge store) into `run(request)`. `create_demo`/`create_configured` register the default tool set **plus the Phase 3 workspace tools and the Phase 4 document tools** (the configured agent builds its `KnowledgeStore` limits from `Settings`). | IMPLEMENTED |
 
 Entry point: `apps/backend/src/main.py` (demo, mock provider by default, no API key).
 
@@ -224,6 +231,36 @@ Each decision lists the *why*, per the AGENTS.md rule to document decisions.
   denied operation never touches the filesystem. Writes are atomic and
   bounded; events carry only relative paths + metadata, never host paths or
   file contents. See SECURITY.md for the full model.
+- **D15 — Parsers are a replaceable seam; the core model is library-free.**
+  Phase 4's document layer depends on the `DocumentParser` interface and the
+  normalized Pydantic models — never on a specific parser library. Each
+  built-in parser implements `_extract` (library-specific) and inherits the
+  shared `normalize` (limits, truncation reporting, stats, ids). The four
+  binary parsers (PDF/DOCX/PPTX/XLSX) live behind an optional `docs` extra
+  and import their library **lazily at parse time**; a missing library is a
+  structured `parser_unavailable` error, so the package stays importable and
+  the registry shape stays stable. TXT/Markdown need no dependency. All
+  parser libraries are used for *parsing only* — macros, embedded scripts,
+  formulas, links, and any other executable content are never run (XLSX is
+  opened `read_only` + `data_only`, i.e. cached values, no formula
+  evaluation), and document text is never interpreted as instructions.
+- **D16 — Retrieval is lexical and deterministic, behind a swappable
+  protocol.** `KnowledgeStore` implements `RetrievalIndex` (add/replace/
+  remove/get/search) with token-based TF/IDF ranking: no embeddings, no
+  external model, no network — the same query over the same index always
+  yields the same ranked results (ties break on chunk id). The protocol is
+  the deliberate seam: a future vector/embedding store can implement the same
+  interface without changing the document model or the tools.
+- **D17 — Document I/O rides the Phase 3 workspace boundary; indexing is a
+  MEDIUM mutation.** All four document tools resolve paths through
+  `Workspace.resolve()` — document tools inherit the entire Phase 3 safety
+  model (no absolute paths, no escape, fail-closed). `inspect/extract/
+  search` are LOW (read-only); `index_document` is MEDIUM because it mutates
+  internal knowledge state (analogous to workspace file mutations), so a
+  denied index never touches the store. Limits are configuration-driven
+  (`DOCUMENT_*` env vars) and fail-safe: size violations are structured
+  errors, capacity violations produce **explicitly reported** truncation —
+  never silent.
 
 ---
 
@@ -248,8 +285,14 @@ These are **NOT IMPLEMENTED** and must not be added prematurely
   callback protocol exists and is fail-safe.
 - Computer control and browser automation.
 - Voice I/O.
-- Image/video generation, presentation generation, document analysis.
-- RAG and persistent memory.
+- Image/video generation and presentation/document *generation*. (Reading &
+  analyzing existing documents — TXT/MD/PDF/DOCX/PPTX/XLSX — is IMPLEMENTED
+  in Phase 4; producing new documents is not.)
+- **Semantic/vector** retrieval (embeddings) and **persistent long-term
+  memory**. Phase 4 retrieval is deliberately *lexical* and deterministic
+  (in-memory `KnowledgeStore` behind the `RetrievalIndex` protocol); a vector
+  store and durable memory are future phases that plug into that same
+  protocol.
 - Task Manager layer (task persistence, queueing, multi-task scheduling).
 - User interface and API layer (HTTP/WebSocket).
 - `WAITING_FOR_USER`, `PAUSED`, `TASK_PAUSED`, `TASK_RESUMED` are **modeled**
@@ -273,6 +316,20 @@ These are **NOT IMPLEMENTED** and must not be added prematurely
   SDK **lazily** (keep the package importable without it), and register the
   provider name in `providers/factory.py`. Everything upstream (gateway,
   planner, agent) then works unchanged. See CONTRIBUTING.md for the pattern.
+- **New document parser (Phase 4):** subclass `DocumentParser`, declare
+  `supported_extensions` / `supported_media_types`, implement `_extract`
+  (return `ExtractedContent`), and register the instance in a
+  `ParserRegistry` (or `default_registry()` for the built-in set). The
+  shared `normalize` applies limits, truncation reporting, stats, and
+  deterministic ids; the document tools and the knowledge store then work
+  with the new format unchanged. Keep any third-party library import lazy
+  and behind the optional `docs` extra, and use it for parsing only — never
+  for executing anything the document contains.
+- **New retrieval backend (Phase 4 seam):** implement the `RetrievalIndex`
+  protocol (`add_document`, `add_chunks`, `remove_document`,
+  `get_document`, `get_chunk`, `list_documents`, `search`) — e.g. a
+  vector/embedding store — and pass it wherever a `KnowledgeStore` is
+  injected. The document model and the four document tools stay unchanged.
 - **New planner/verifier:** satisfy the `Planner` / `Verifier` protocols.
   Swap them into `Agent`.
 

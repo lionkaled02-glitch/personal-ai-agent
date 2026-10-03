@@ -17,6 +17,9 @@ from pathlib import Path
 
 from .builtin_tools import register_default_tools
 from .config import Settings
+from .document_tools import register_document_tools
+from .documents.limits import DocumentLimits
+from .documents.retrieval import KnowledgeStore
 from .errors import PlanningError
 from .events import Clock, EventBus, EventType, bounded_text, utc_now
 from .executor import BasicVerifier, Executor, Verifier
@@ -43,11 +46,13 @@ class Agent:
         events: EventBus,
         verifier: Verifier | None = None,
         clock: Clock | None = None,
+        knowledge_store: KnowledgeStore | None = None,
     ) -> None:
         self._planner = planner
         self._registry = registry
         self._permissions = permissions
         self._events = events
+        self._knowledge_store = knowledge_store if knowledge_store is not None else KnowledgeStore()
         self._executor = Executor(
             registry=registry,
             permissions=permissions,
@@ -70,12 +75,17 @@ class Agent:
         (apps/backend/src/main.py) and by integration tests. Registers the
         default tool set (demo tool + Phase 2 safe built-ins) plus the Phase 3
         workspace tools bound to the workspace root (default
-        ``data/workspace``). Filesystem tools only act inside that boundary.
+        ``data/workspace``) and the Phase 4 document tools bound to the same
+        boundary and an in-memory knowledge store. Filesystem and document
+        tools only act inside that boundary.
         """
         registry = ToolRegistry()
         register_default_tools(registry)
         root = workspace_root if workspace_root is not None else Settings().workspace_root
-        register_workspace_tools(registry, Workspace(root))
+        workspace = Workspace(root)
+        register_workspace_tools(registry, workspace)
+        store = KnowledgeStore()
+        register_document_tools(registry, workspace, store)
         provider = MockModelProvider()
         return cls(
             planner=ModelPlanner(provider),
@@ -84,6 +94,7 @@ class Agent:
             events=EventBus(clock=clock),
             verifier=BasicVerifier(),
             clock=clock,
+            knowledge_store=store,
         )
 
     @classmethod
@@ -104,14 +115,19 @@ class Agent:
         Pass a pre-built ``gateway`` to reuse/inspect one (e.g. to log the
         active provider name); otherwise it is built from ``settings``.
         Registers the default tool set (demo tool + Phase 2 safe built-ins)
-        plus the Phase 3 workspace tools bound to ``settings.workspace_root``.
+        plus the Phase 3 workspace tools bound to ``settings.workspace_root``
+        and the Phase 4 document tools bound to the same boundary and an
+        in-memory knowledge store whose limits come from the settings.
         """
         resolved = settings if settings is not None else Settings.from_env()
         if gateway is None:
             gateway = build_gateway(resolved)
         registry = ToolRegistry()
         register_default_tools(registry)
-        register_workspace_tools(registry, Workspace.from_settings(resolved))
+        workspace = Workspace.from_settings(resolved)
+        register_workspace_tools(registry, workspace)
+        store = KnowledgeStore(DocumentLimits.from_settings(resolved))
+        register_document_tools(registry, workspace, store)
         return cls(
             planner=ModelPlanner(gateway),
             registry=registry,
@@ -119,6 +135,7 @@ class Agent:
             events=EventBus(clock=clock),
             verifier=BasicVerifier(),
             clock=clock,
+            knowledge_store=store,
         )
 
     @property
@@ -128,6 +145,10 @@ class Agent:
     @property
     def registry(self) -> ToolRegistry:
         return self._registry
+
+    @property
+    def knowledge_store(self) -> KnowledgeStore:
+        return self._knowledge_store
 
     def run(self, request: str) -> Task:
         """Run one user request to a terminal task state."""

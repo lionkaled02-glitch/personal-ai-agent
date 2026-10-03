@@ -60,6 +60,10 @@ python apps/backend/src/main.py "Run the demo tool."
 - **Test important behavior:** state transitions, permission decisions, tool
   validation, the planner, and the end-to-end flow are all covered. If you add
   behavior, add a test.
+- **Document tests use generated fixtures.** `packages/agent-core/tests/
+  document_fixtures.py` builds deterministic TXT/MD/PDF/DOCX/PPTX/XLSX
+  fixtures in temp directories (the PDF is generated structurally). Never
+  test against real user files.
 - Place core tests in `packages/agent-core/tests/` and app-level tests in
   `apps/backend/tests/`.
 
@@ -125,6 +129,48 @@ workspace-specific rules:
 7. **Register via `register_workspace_tools`** (keeps the workspace tool
    set auditable as one unit) and add tests for the happy path, every
    error code you can trigger, and at least one escape attempt.
+
+### Adding a document tool or parser (Phase 4)
+
+Document tools and parsers follow the same spec+`run` contract, plus
+document-specific rules:
+
+1. **Document content is untrusted data.** Parsers extract text/structure
+   only — they must never execute anything a document contains (macros,
+   scripts, formulas, links) and must never treat document text as
+   instructions. XLSX stays `read_only` + `data_only` (cached values, no
+   formula evaluation).
+2. **Parsers implement the interface, not a format leak.** Subclass
+   `DocumentParser` (`documents/parsers/base.py`), declare
+   `supported_extensions` / `supported_media_types`, implement `_extract`
+   (return `ExtractedContent`). The shared `normalize` handles limits,
+   truncation reporting, stats, and deterministic ids — don't re-implement
+   it. Binary parsers import their library **lazily inside `_extract`** and
+   raise `DocumentError(PARSER_UNAVAILABLE, …)` on `ImportError` so the
+   package stays importable without the `docs` extra.
+3. **New third-party imports in the document layer are blocked by a static
+   test** (`test_security_boundaries.py` whitelists stdlib + the four parser
+   libraries + pydantic). A genuinely new parsing library needs the
+   whitelist, the `docs` extra, a py.typed/mypy audit, and a security review.
+4. **Respect `DocumentLimits`** (`documents/limits.py`). Size violations are
+   structured errors; capacity violations produce an explicitly reported
+   truncation (`truncated=True` + warning) — never a silent cut, never
+   unbounded memory.
+5. **Tools resolve paths through the Phase 3 `Workspace`** (via
+   `load_document` in `document_tools/_common.py`) and keep the stable
+   `DocumentError` codes in error messages (workspace-relative paths only,
+   no host paths, no document content in inspect-style metadata).
+6. **Permissions:** reading/extraction/searching documents is LOW;
+   `index_document` is MEDIUM (internal knowledge mutation) and must go
+   through the fail-safe approval path — a denied index performs no store
+   mutation. Keep it that way unless the mutation grows.
+7. **Retrieval stays deterministic and provider-neutral.** Don't add
+   embeddings or external models to `KnowledgeStore`; if you need semantic
+   search, implement the `RetrievalIndex` protocol with a new backend.
+8. **Register via `register_document_tools`** and add tests: happy path per
+   tool, every structured error code, permission behavior (LOW runs without
+   approval; MEDIUM denied ⇒ no mutation), boundary escapes, and at least
+   one injection-style document proving content stays data.
 
 ## Adding a model provider
 

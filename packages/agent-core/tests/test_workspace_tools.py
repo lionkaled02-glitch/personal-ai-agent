@@ -738,6 +738,8 @@ class TestFactoryWiring:
         settings = Settings(workspace_root=tmp_path / "ws")
         agent = Agent.create_configured(settings=settings)
         names = {spec.name for spec in agent.registry.list_tools()}
+        # Phase 4 topology change (documented): the configured agent also
+        # registers the 4 document tools.
         expected = {
             "list_directory",
             "read_text_file",
@@ -753,6 +755,10 @@ class TestFactoryWiring:
             "datetime",
             "json_utils",
             "text_utils",
+            "inspect_document",
+            "extract_document",
+            "index_document",
+            "search_documents",
         }
         assert names == expected
 
