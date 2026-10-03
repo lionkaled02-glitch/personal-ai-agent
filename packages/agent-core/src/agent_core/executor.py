@@ -1,11 +1,13 @@
-"""Step executor: run a planned task through the registry and permissions.
+"""Step executor: run a planned task through the tool runtime and permissions.
 
 Responsibilities — and only these:
 
 - enforce the task/step state machine,
 - check permissions before every tool call (and route approvals),
-- execute tools through the registry's controlled interface,
-- emit a structured event for every observable transition.
+- execute tools through the :class:`~agent_core.tool_runtime.ToolRuntime`,
+  which requires the executor's ALLOWED decision and owns the tool
+  lifecycle events (started/completed/failed + validation events),
+- emit a structured event for every task/step transition.
 
 Verification is delegated to a pluggable :class:`Verifier`. The default
 (:class:`BasicVerifier`) only confirms that every step completed; real
@@ -20,10 +22,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from .errors import TaskStateError, ToolExecutionError, ToolInputError, ToolNotFoundError
+from .errors import (
+    PermissionDeniedError,
+    TaskStateError,
+    ToolNotFoundError,
+)
 from .events import Clock, EventBus, EventType, utc_now
 from .permissions import ApprovalRequest, PermissionDecision, PermissionManager
 from .tasks import StepStatus, Task, TaskState, TaskStep
+from .tool_runtime import ToolInvocation, ToolRuntime
 from .tools import ToolRegistry
 
 
@@ -59,12 +66,20 @@ class Executor:
         events: EventBus,
         verifier: Verifier | None = None,
         clock: Clock | None = None,
+        runtime: ToolRuntime | None = None,
     ) -> None:
         self._registry = registry
         self._permissions = permissions
         self._events = events
         self._verifier: Verifier = verifier or BasicVerifier()
         self._clock: Clock = clock or utc_now
+        # Phase 2: the runtime is the only execution path for tool calls.
+        # Auto-built from the same registry/events/clock when not supplied.
+        self._runtime = runtime or ToolRuntime(registry=registry, events=events, clock=self._clock)
+
+    @property
+    def runtime(self) -> ToolRuntime:
+        return self._runtime
 
     def execute(self, task: Task) -> Task:
         if task.state is not TaskState.PLANNING:
@@ -99,9 +114,21 @@ class Executor:
             self._fail_task(task, str(exc))
             return False
 
+        # Phase 2: the step is picked up (observable before any permission work).
+        self._events.emit(
+            EventType.TOOL_REQUESTED,
+            task_id=task.id,
+            step_id=step.id,
+            data={
+                "tool_name": step.tool_name,
+                "permission_level": tool.spec.permission_level.name,
+            },
+        )
+
         decision = self._permissions.check(tool.spec)
         if decision is PermissionDecision.DENIED:
             step.transition(StepStatus.CANCELLED)
+            self._emit_tool_denied(task, step, "denied_by_policy")
             return self._cancel_task(
                 task,
                 step,
@@ -129,6 +156,7 @@ class Executor:
             )
             if not approved:
                 step.transition(StepStatus.CANCELLED)
+                self._emit_tool_denied(task, step, "approval_denied")
                 return self._cancel_task(
                     task,
                     step,
@@ -136,47 +164,41 @@ class Executor:
                 )
 
         step.transition(StepStatus.RUNNING)
-        self._events.emit(
-            EventType.TOOL_STARTED,
+        invocation = ToolInvocation(
             task_id=task.id,
             step_id=step.id,
-            data={"tool_name": step.tool_name, "input": step.input},
+            tool_name=step.tool_name,
+            input=dict(step.input),
         )
         try:
-            result = self._registry.execute(step.tool_name, step.input)
-        except (ToolInputError, ToolExecutionError) as exc:
-            step.transition(StepStatus.FAILED)
-            step.error = str(exc)
-            self._events.emit(
-                EventType.TOOL_FAILED,
-                task_id=task.id,
-                step_id=step.id,
-                data={"tool_name": step.tool_name, "error": str(exc)},
-            )
-            self._fail_task(task, str(exc))
-            return False
+            # The runtime re-checks the decision (backstop) and emits the
+            # tool lifecycle events (started / completed / failed / invalid).
+            result = self._runtime.execute(invocation, decision=PermissionDecision.ALLOWED)
+        except PermissionDeniedError as exc:
+            # Unreachable via this path (we only pass ALLOWED); treated as a
+            # denial so no code path can execute an unapproved tool.
+            step.transition(StepStatus.CANCELLED)
+            self._emit_tool_denied(task, step, "permission_backstop")
+            return self._cancel_task(task, step, str(exc))
 
         if result.ok:
             step.transition(StepStatus.COMPLETED)
             step.output = result.output
-            self._events.emit(
-                EventType.TOOL_COMPLETED,
-                task_id=task.id,
-                step_id=step.id,
-                data={"tool_name": step.tool_name, "output": result.output},
-            )
             return True
 
         step.transition(StepStatus.FAILED)
         step.error = result.error
-        self._events.emit(
-            EventType.TOOL_FAILED,
-            task_id=task.id,
-            step_id=step.id,
-            data={"tool_name": step.tool_name, "error": result.error},
-        )
         self._fail_task(task, result.error or "tool failed without an error message")
         return False
+
+    def _emit_tool_denied(self, task: Task, step: TaskStep, reason: str) -> None:
+        """Structured observation of a permission refusal (Phase 2)."""
+        self._events.emit(
+            EventType.TOOL_DENIED,
+            task_id=task.id,
+            step_id=step.id,
+            data={"tool_name": step.tool_name, "reason": reason},
+        )
 
     def _cancel_task(self, task: Task, step: TaskStep, reason: str) -> bool:
         task.error = reason

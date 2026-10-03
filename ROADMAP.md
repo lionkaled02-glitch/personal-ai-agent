@@ -60,19 +60,33 @@ no credentials; malformed model output fails as a controlled `PlanningError`.
 
 ---
 
-## Phase 2 — First useful tools
+## Phase 2 — Tool Runtime & safe built-in tools ✅ IMPLEMENTED
 
-Real, side-effecting tools behind the existing tool + permission system.
+A provider-independent Tool Runtime around the existing tool abstraction,
+plus a small set of deterministic, side-effect-free built-in tools. The
+runtime makes it architecturally difficult to bypass permissions and
+validation: the agent's only execution path requires an explicit ALLOWED
+permission decision and schema-valid input.
 
 | Item | Status |
 | --- | --- |
-| File tools scoped to `DATA_ROOT` (read/list/summary) | NOT IMPLEMENTED |
-| Web search / fetch tool | NOT IMPLEMENTED |
-| Approval channel wired to a human (CLI prompt, then UI) | NOT IMPLEMENTED |
-| Output verification beyond "all steps done" | NOT IMPLEMENTED |
+| Tool Runtime: registration, discovery, lookup, controlled execution | IMPLEMENTED |
+| Permission enforcement as a hard precondition of execution (backstop) | IMPLEMENTED |
+| Input validation (JSON-Schema subset) before execution | IMPLEMENTED |
+| Output validation (JSON-Schema subset) before results reach the Agent | IMPLEMENTED |
+| Structured results: machine-readable `error_code` + execution `metadata` | IMPLEMENTED |
+| Tool lifecycle events (requested/started/completed/failed/denied/invalid) | IMPLEMENTED |
+| Built-in tools: calculator, date/time, text utils, JSON utils (LOW, bounded) | IMPLEMENTED |
+| Tool spec compatibility metadata (`version`, `deterministic`) | IMPLEMENTED |
+| Safety-boundary tests (no shell/subprocess/eval/network in core source) | IMPLEMENTED |
+| Side-effecting tools: files (scoped to `DATA_ROOT`), web fetch/search | NOT IMPLEMENTED (deferred — next tool phase) |
+| Approval channel wired to a human (CLI prompt, then UI) | NOT IMPLEMENTED (synchronous callback exists) |
+| Output verification beyond "all steps done" | NOT IMPLEMENTED (later phase) |
 
-**Acceptance:** each new tool is LOW/MEDIUM/HIGH as appropriate, fails safe,
-and is tested without hitting real external services in the default suite.
+**Acceptance (met):** tools are permission-gated, schema-validated, bounded,
+and deterministic (or declared non-deterministic); the default test suite
+runs offline with no external services; forbidden capabilities are verified
+absent by tests.
 
 ---
 

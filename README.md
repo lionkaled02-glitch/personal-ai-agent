@@ -12,9 +12,12 @@ This repository currently contains:
 - **Phase 1: the Model Gateway & a real provider** — provider selection,
   error normalization, safe retries/timeouts, and an OpenAI adapter. The
   default remains the fully offline mock provider.
+- **Phase 2: the Tool Runtime & safe built-in tools** — a permission-gated,
+  schema-validated, metadata-carrying tool execution layer plus deterministic
+  built-in tools (calculator, date/time, text utils, JSON utils).
 
-Everything else (real tools, browser, computer control, voice, media,
-memory/RAG) is deliberately NOT IMPLEMENTED yet.
+Everything else (side-effecting tools, browser, computer control, voice,
+media, memory/RAG) is deliberately NOT IMPLEMENTED yet.
 
 > See [ROADMAP.md](ROADMAP.md) and [ARCHITECTURE.md](ARCHITECTURE.md) for
 > exactly what exists and what does not.
@@ -51,6 +54,15 @@ A single Python package, `agent-core`, that proves the architecture works:
 - **Structured planning (Phase 1)** — explicit JSON contract in the model
   request + strict validation of model output (invalid model output fails as
   a controlled `PlanningError`, never an invalid plan).
+- **Tool Runtime (Phase 2)** — the agent's only tool-execution path. It
+  requires an explicit ALLOWED permission decision, validates input *and*
+  output against the tool's JSON-Schema, contains tool exceptions into
+  structured `ToolResult`s (machine-readable `error_code`), attaches
+  execution metadata (tool version, determinism, duration), and emits the
+  tool lifecycle events. Provider-independent.
+- **Safe built-in tools (Phase 2)** — `calculator` (hand-written parser, no
+  `eval`), `datetime` (IANA timezones, declared non-deterministic),
+  `text_utils`, `json_utils`. All LOW-permission, bounded, side-effect-free.
 - **One mock tool** (`demo_tool`) used for the end-to-end tests.
 
 The **first end-to-end flow** is implemented and tested:
@@ -81,7 +93,9 @@ User Request → Agent → Planner → Tool Registry → Mock Tool → Result �
 │       │   ├── permissions.py   # levels, policy, PermissionManager
 │       │   ├── events.py        # EventType, AgentEvent, EventBus
 │       │   ├── config.py        # Settings (env-based, no secrets)
-│       │   ├── demo_tools.py    # DemoTool (the one mock tool)
+│       │   ├── demo_tools.py    # DemoTool (the demo tool)
+│       │   ├── builtin_tools/   # safe built-in tools (calc, datetime, text, json)
+│       │   ├── tool_runtime.py  # ToolRuntime (permission-gated execution)
 │       │   ├── errors.py        # exception hierarchy
 │       │   └── providers/
 │       │       ├── base.py      # ModelProvider ABC + request/response models

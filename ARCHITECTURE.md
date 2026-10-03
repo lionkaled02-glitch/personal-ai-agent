@@ -62,22 +62,24 @@ All implemented code lives in the single package
 | --- | --- | --- | --- |
 | `tasks.py` | `Task`, `TaskStep`, `TaskState`, `StepStatus` | Task/step state machines with an enforced transition map. Supports multi-step workflows. | IMPLEMENTED |
 | `planner.py` | `Plan`, `PlanStep`, `Planner`, `ModelPlanner`, `plan_json_schema` | Turns a request into an ordered list of tool steps. Sends an explicit structured-output contract (`response_format`), tolerates one markdown code fence, and validates output (JSON → `Plan` schema → known tool names) before anything runs. | IMPLEMENTED |
-| `executor.py` | `Executor`, `Verifier`, `BasicVerifier` | Runs a plan: permission check → approval → execute → verify → terminal state. Emits events. | IMPLEMENTED |
-| `tools.py` | `Tool`, `ToolSpec`, `ToolResult`, `ToolRegistry` | Tool abstraction + registry with controlled execution and JSON-Schema validation. | IMPLEMENTED |
+| `executor.py` | `Executor`, `Verifier`, `BasicVerifier` | Runs a plan: TOOL_REQUESTED → permission check → approval → execute via the Tool Runtime → verify → terminal state. Emits task/step events incl. `TOOL_DENIED`. | IMPLEMENTED |
+| `tools.py` | `Tool`, `ToolSpec`, `ToolResult`, `ToolRegistry` | Tool abstraction (incl. `version`, `deterministic` metadata) + registry with controlled execution and JSON-Schema validation. Structured `ToolResult` (`error_code`, `metadata`). | IMPLEMENTED |
+| `tool_runtime.py` | `ToolRuntime`, `ToolInvocation` | The agent's only tool-execution path: requires an explicit ALLOWED permission decision (backstop), runs the registry's validate→run→validate pipeline, attaches execution metadata, emits tool lifecycle events. Provider-independent. | IMPLEMENTED |
 | `schema.py` | `validate_against_schema` | Minimal JSON-Schema (subset) validator: `type`, `properties`, `required`, `items`, `enum`. | IMPLEMENTED |
 | `permissions.py` | `PermissionLevel`, `PermissionPolicy`, `PermissionManager`, `ApprovalCallback` | Level-based policy decisions and fail-safe approval routing. | IMPLEMENTED |
-| `events.py` | `EventType`, `AgentEvent`, `EventBus` | Structured, in-memory event log + subscribers. Operational data only. | IMPLEMENTED |
+| `events.py` | `EventType`, `AgentEvent`, `EventBus`, `bounded_text` | Structured, in-memory event log + subscribers. Operational data only. | IMPLEMENTED |
 | `providers/base.py` | `ModelProvider`, `ModelRequest`, `ModelResponse`, `Capability` | Vendor-neutral model interface. `stream`/`embed` are declared but raise until an adapter implements them. | IMPLEMENTED |
 | `providers/mock.py` | `MockModelProvider` | Deterministic in-memory provider (scripted or keyword mode). No network, no key. Default provider. | IMPLEMENTED |
 | `providers/gateway.py` | `ModelGateway` | `ModelProvider` decorator: normalizes provider errors, retries transient failures with bounded exponential backoff, passes structured responses through unchanged. Vendor-agnostic. | IMPLEMENTED |
 | `providers/factory.py` | `create_provider`, `build_gateway`, `SUPPORTED_PROVIDERS` | Configuration-driven provider selection (`MODEL_PROVIDER`) + gateway construction. The only place that knows provider names. | IMPLEMENTED |
 | `providers/openai_provider.py` | `OpenAIProvider` | Real Chat Completions adapter (optional `openai` extra, lazy SDK import). Env credentials, timeouts, sanitized error mapping. | IMPLEMENTED |
 | `config.py` | `Settings` | Env-based configuration (`AGENT_NAME`, `LOG_LEVEL`, `DATA_ROOT`, `MODEL_PROVIDER`, `MODEL_NAME`, `MODEL_TIMEOUT_S`, `MODEL_MAX_RETRIES`). No secrets. | IMPLEMENTED |
-| `demo_tools.py` | `DemoTool` | The one mock tool (`demo_tool`, LOW permission) used for the end-to-end test. | IMPLEMENTED |
-| `errors.py` | `AgentCoreError` + subclasses | Single exception hierarchy so agent failures are catchable. | IMPLEMENTED |
-| `agent.py` | `Agent` | Facade that wires planner + registry + permissions + events + executor into `run(request)`. | IMPLEMENTED |
+| `demo_tools.py` | `DemoTool` | The demo tool (`demo_tool`, LOW permission) used to prove the end-to-end flow. | IMPLEMENTED |
+| `builtin_tools/` | `CalculatorTool`, `DateTimeTool`, `TextUtilsTool`, `JsonUtilsTool`, `register_default_tools` | Safe, deterministic, side-effect-free built-in tools (all LOW permission, bounded input). Date/time is declared non-deterministic. No shell/filesystem/network. | IMPLEMENTED |
+| `errors.py` | `AgentCoreError` + subclasses | Single exception hierarchy so agent failures are catchable (incl. `PermissionDeniedError`, `ToolAlreadyRegisteredError`). | IMPLEMENTED |
+| `agent.py` | `Agent` | Facade that wires planner + registry + permissions + events + executor into `run(request)`. `create_demo`/`create_configured` register the default tool set. | IMPLEMENTED |
 
-Entry point: `apps/backend/src/main.py` (demo, mock provider, no API key).
+Entry point: `apps/backend/src/main.py` (demo, mock provider by default, no API key).
 
 ---
 
@@ -95,11 +97,18 @@ each observable transition:
                        a controlled PlanningError, never an invalid plan.
    PLAN_CREATED        Plan validated (tool names exist, shapes ok).
 3. → RUNNING           Executor starts. For each step:
-                         a. permission check (PermissionManager)
-                         b. if REQUIRES_APPROVAL → APPROVAL_REQUIRED, ask channel
-                            (no channel / denied → task CANCELLED, TOOL not run)
-                         c. TOOL_STARTED → registry.execute (schema-validated)
-                         d. ok → TOOL_COMPLETED   |  fail → TOOL_FAILED → task FAILED
+                         a. TOOL_REQUESTED (step picked up, permission level noted)
+                         b. permission check (PermissionManager)
+                         c. if REQUIRES_APPROVAL → APPROVAL_REQUIRED, ask channel
+                            (no channel / denied → TOOL_DENIED → task CANCELLED,
+                            TOOL not run)
+                         d. if DENIED by policy → TOOL_DENIED → task CANCELLED
+                         e. Tool Runtime (requires ALLOWED) → TOOL_STARTED →
+                            registry: input validation → run → output validation
+                            (input invalid → TOOL_INPUT_INVALID → TOOL_FAILED)
+                            (output invalid → TOOL_OUTPUT_INVALID → TOOL_FAILED)
+                         f. ok → TOOL_COMPLETED (metadata attached)
+                            | fail → TOOL_FAILED (error_code) → task FAILED
 4. → VERIFYING         Verifier checks the executed task (BasicVerifier: all steps done).
 5. → COMPLETED         result set (last step output); or FAILED on verification failure.
    TASK_COMPLETED      (or TASK_FAILED / TASK_CANCELLED on the failure paths)
@@ -111,14 +120,22 @@ backoff (`MODEL_MAX_RETRIES`); any non-project exception is normalized to a
 `ProviderError`; planning failures end the task as FAILED with a controlled
 error.
 
+Tool Runtime behavior (Phase 2): a tool cannot execute without an explicit
+ALLOWED permission decision — the runtime raises `PermissionDeniedError` for
+anything else (the executor only ever passes ALLOWED, so this is a
+defense-in-depth backstop). Input and output are schema-validated; tool
+exceptions are contained into a structured `ToolResult` (never a crash).
+
 The happy path for the request `"Run the demo tool."` emits exactly:
 
 ```
-TASK_CREATED → PLAN_CREATED → TOOL_STARTED → TOOL_COMPLETED → TASK_COMPLETED
+TASK_CREATED → PLAN_CREATED → TOOL_REQUESTED → TOOL_STARTED
+  → TOOL_COMPLETED → TASK_COMPLETED
 ```
 
-Failure paths (invalid plan, unknown tool, failing tool, denied approval) are
-all implemented and tested in `packages/agent-core/tests/test_agent_flow.py`.
+Failure paths (invalid plan, unknown tool, failing tool, invalid input/output,
+denied policy/approval) are all implemented and tested in
+`packages/agent-core/tests/test_agent_flow.py`.
 
 ---
 
@@ -175,6 +192,16 @@ Each decision lists the *why*, per the AGENTS.md rule to document decisions.
   sets the HTTP timeout (`MODEL_TIMEOUT_S`) and disables the SDK's own
   retries (`max_retries=0`) so retry policy exists in one place: the gateway,
   with deterministic, testable backoff.
+- **D13 — The Tool Runtime is the agent's only execution path; the registry
+  stays permission-free.** The registry keeps the validate→run→validate
+  pipeline and exception containment (reusable outside the agent loop); the
+  runtime adds the permission precondition (explicit ALLOWED decision or
+  `PermissionDeniedError`), execution metadata, and tool lifecycle events.
+  No tool can be executed by the agent without passing both the permission
+  system and schema validation. Phase 2 tools are all LOW-permission,
+  deterministic (or declared non-deterministic), side-effect-free, and
+  bounded; forbidden capabilities (shell/subprocess/eval/network/filesystem)
+  are verified absent by static + behavioral tests.
 
 ---
 
@@ -189,7 +216,13 @@ These are **NOT IMPLEMENTED** and must not be added prematurely
   implemented).
 - Native strict `json_schema` output mode (the openai adapter uses
   `json_object` mode; see decision D11).
-- Real tools with side effects (files, web, shell, computer, browser).
+- Side-effecting tools: file tools (scoped to `DATA_ROOT`), web fetch/search,
+  shell, computer, browser. Phase 2's built-ins are intentionally
+  side-effect-free; the next tool phase adds scoped, permission-gated
+  side-effecting tools.
+- Output verification beyond "all steps completed" (a richer `Verifier`).
+- Human-facing approval channel (CLI prompt / UI); a synchronous approval
+  callback protocol exists and is fail-safe.
 - Computer control and browser automation.
 - Voice I/O.
 - Image/video generation, presentation generation, document analysis.
@@ -204,9 +237,13 @@ These are **NOT IMPLEMENTED** and must not be added prematurely
 
 ## 6. How new capability plugs in
 
-- **New tool:** implement `spec: ToolSpec` + `run(input) -> ToolResult`,
-  register it in a `ToolRegistry`, declare the correct `permission_level`.
-  No core changes.
+- **New tool:** implement `spec: ToolSpec` (name, description, input/output
+  JSON-Schema, `permission_level`, `version`, `deterministic`) +
+  `run(input) -> ToolResult`; register it in a `ToolRegistry` (or use
+  `register_default_tools` for the built-in set). The Tool Runtime then
+  handles permission gating, validation, metadata, and events — no core
+  changes. Tools must be safe by construction (bounded inputs, structured
+  failures via `error_code`); see CONTRIBUTING.md for the checklist.
 - **New model provider:** subclass `ModelProvider`, implement `complete()`
   (and optionally `stream()`/`embed()`), declare `capabilities`. Add an
   optional extra in `packages/agent-core/pyproject.toml`, import the vendor

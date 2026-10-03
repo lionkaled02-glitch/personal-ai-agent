@@ -67,17 +67,34 @@ python apps/backend/src/main.py "Run the demo tool."
 
 ## Adding a tool
 
+The Tool Runtime (Phase 2) handles permission gating, input/output
+validation, metadata, and events — a well-behaved tool is just a spec plus a
+pure `run`.
+
 1. Create a class with a `spec: ToolSpec` and a `run(input) -> ToolResult`
-   method (see `demo_tools.py` for the pattern).
-2. Declare the correct `permission_level`
-   (`LOW` / `MEDIUM` / `HIGH`) — see [SECURITY.md](SECURITY.md).
-3. Register it in a `ToolRegistry` where the agent is wired up.
-4. Add tests (registration, execution, permission path).
-5. No core changes should be needed. If they are, stop and reconsider —
+   method (see `demo_tools.py` and `builtin_tools/` for patterns).
+2. Fill in the **full** spec: `name`, `description`, `input_schema`,
+   `output_schema`, `permission_level`, `version`, and `deterministic`
+   (declare `False` if the tool reads the clock or any external state).
+3. Declare the correct `permission_level` (`LOW` / `MEDIUM` / `HIGH`) —
+   see [SECURITY.md](SECURITY.md).
+4. **Validate & bound input yourself too.** The runtime checks the input
+   against `input_schema`, but also enforce sensible bounds (e.g. max
+   lengths) and return a *structured* failure — `ToolResult(ok=False,
+   error=..., error_code="...")` — rather than raising. Never `eval`/`exec`,
+   never call `subprocess`, never touch the filesystem/network unless that is
+   the tool's explicit, permissioned purpose.
+5. **Return output that matches `output_schema`.** A mismatch is a structured
+   `TOOL_OUTPUT_INVALID` failure, not a value handed to the Agent.
+6. Register it in a `ToolRegistry` (or extend `register_default_tools` for a
+   built-in).
+7. Add tests: registration, valid input, invalid input, permission path,
+   and the failure/`error_code` behavior.
+8. No core changes should be needed. If they are, stop and reconsider —
    that's a smell.
 
-Do **not** add tools with shell access or broad side effects before the
-relevant roadmap phase.
+Do **not** add tools with shell access, unrestricted filesystem or network
+access, or broad side effects before the relevant roadmap phase.
 
 ## Adding a model provider
 

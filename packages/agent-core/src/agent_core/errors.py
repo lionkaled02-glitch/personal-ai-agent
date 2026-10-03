@@ -23,6 +23,14 @@ class ToolNotFoundError(AgentCoreError):
     """A tool was requested that is not registered."""
 
 
+class ToolAlreadyRegisteredError(AgentCoreError, ValueError):
+    """A tool name was registered twice.
+
+    Also subclasses :class:`ValueError` for backwards compatibility with
+    Phase 0 callers that catch the original exception type.
+    """
+
+
 class ToolInputError(AgentCoreError):
     """Tool input did not match the tool's declared input schema."""
 
@@ -32,6 +40,15 @@ class ToolExecutionError(AgentCoreError):
 
     Faulty tool *results* normally surface as ``ToolResult(ok=False)``; this
     is reserved for unrecoverable failures at the registry boundary.
+    """
+
+
+class PermissionDeniedError(AgentCoreError):
+    """Execution was attempted without an ALLOWED permission decision.
+
+    Raised by the :class:`~agent_core.tool_runtime.ToolRuntime` backstop:
+    no tool can execute through the runtime unless the caller passes an
+    explicit :data:`~agent_core.permissions.PermissionDecision.ALLOWED`.
     """
 
 

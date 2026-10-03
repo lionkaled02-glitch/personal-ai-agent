@@ -154,9 +154,12 @@ class TestHappyPath:
 
     def test_event_sequence_is_exactly_the_flow(self, demo_agent: Agent) -> None:
         demo_agent.run("Run the demo tool.")
+        # Phase 2: TOOL_REQUESTED marks the step pickup before the permission
+        # check; the rest of the sequence is unchanged from Phase 0.
         assert event_types(demo_agent) == [
             EventType.TASK_CREATED,
             EventType.PLAN_CREATED,
+            EventType.TOOL_REQUESTED,
             EventType.TOOL_STARTED,
             EventType.TOOL_COMPLETED,
             EventType.TASK_COMPLETED,
@@ -170,13 +173,16 @@ class TestHappyPath:
         assert created.data["request"] == "Run the demo tool."
         plan_event = events[1]
         assert plan_event.data["steps"][0]["tool_name"] == "demo_tool"
-        started = events[2]
+        requested = events[2]
+        assert requested.data["tool_name"] == "demo_tool"
+        assert requested.data["permission_level"] == "LOW"
+        started = events[3]
         assert started.step_id is not None
         assert started.data["tool_name"] == "demo_tool"
         assert started.data["input"] == {"message": "hi from test"}
-        completed = events[3]
+        completed = events[4]
         assert completed.data["output"] == {"tool": "demo_tool", "message": "hi from test"}
-        finished = events[4]
+        finished = events[5]
         assert finished.data["steps_completed"] == 1
 
     def test_timestamps_use_injected_clock(self, demo_agent: Agent) -> None:
@@ -219,6 +225,7 @@ class TestToolFailures:
         assert event_types(agent) == [
             EventType.TASK_CREATED,
             EventType.PLAN_CREATED,
+            EventType.TOOL_REQUESTED,
             EventType.TOOL_STARTED,
             EventType.TOOL_FAILED,
             EventType.TASK_FAILED,
@@ -323,6 +330,95 @@ class TestConfiguredFactory:
         settings = Settings(model_provider="bogus")
         with pytest.raises(ProviderConfigurationError, match="bogus"):
             Agent.create_configured(settings=settings)
+
+
+class TestToolRuntimeIntegration:
+    """Executor + ToolRuntime + built-in tools, end to end (offline)."""
+
+    def test_calculator_tool_completes_via_agent(self, fixed_clock: Clock) -> None:
+        from agent_core import CalculatorTool
+
+        agent = build_agent(
+            _plan_json("calculator", {"expression": "6 * 7"}),
+            [CalculatorTool()],
+            fixed_clock=fixed_clock,
+        )
+        task = agent.run("calculate 6 * 7")
+        assert task.state is TaskState.COMPLETED
+        assert task.result == {"expression": "6 * 7", "result": 42, "type": "integer"}
+
+    def test_default_agent_can_plan_and_run_calculator(self, fixed_clock: Clock) -> None:
+        # create_demo registers the built-ins; a plan for calculator works.
+        from agent_core import CalculatorTool
+        from agent_core.builtin_tools import register_default_tools
+
+        registry = register_default_tools(ToolRegistry())
+        clock: Clock = fixed_clock
+        agent = Agent(
+            planner=ModelPlanner(
+                MockModelProvider(responses=[_plan_json("calculator", {"expression": "1 + 1"})])
+            ),
+            registry=registry,
+            permissions=PermissionManager(),
+            events=EventBus(clock=clock),
+            clock=clock,
+        )
+        assert CalculatorTool.spec.name == "calculator"
+        task = agent.run("calculate one plus one")
+        assert task.state is TaskState.COMPLETED
+        assert task.result is not None and task.result["result"] == 2
+
+    def test_invalid_tool_input_emits_validation_event_and_fails(self, fixed_clock: Clock) -> None:
+        # Plan schema allows any input object; the registry's input-schema
+        # check catches the bad type at runtime (not at planning time).
+        plan = _plan_json("demo_tool", {"message": 42})
+        agent = build_agent(plan, [DemoTool()], fixed_clock=fixed_clock)
+        task = agent.run("run the demo tool with a number")
+        assert task.state is TaskState.FAILED
+        assert task.error is not None and "invalid input" in task.error
+        types = event_types(agent)
+        assert EventType.TOOL_INPUT_INVALID in types
+        assert types.index(EventType.TOOL_INPUT_INVALID) < types.index(EventType.TOOL_FAILED)
+        invalid = agent.events.events_of_type(EventType.TOOL_INPUT_INVALID)[0]
+        assert invalid.data["error_code"] == "input_invalid"
+
+    def test_permission_denial_emits_tool_denied_event(self, fixed_clock: Clock) -> None:
+        policy = PermissionPolicy(denied_tools=frozenset({"demo_tool"}))
+        agent = build_agent(DEMO_PLAN_JSON, [DemoTool()], policy=policy, fixed_clock=fixed_clock)
+        task = agent.run("Run the demo tool.")
+        assert task.state is TaskState.CANCELLED
+        denied = agent.events.events_of_type(EventType.TOOL_DENIED)
+        assert len(denied) == 1
+        assert denied[0].data["tool_name"] == "demo_tool"
+        assert denied[0].data["reason"] == "denied_by_policy"
+        assert EventType.TOOL_STARTED not in event_types(agent)  # never executed
+
+    def test_approval_denial_emits_tool_denied_event(self, fixed_clock: Clock) -> None:
+        agent = build_agent(
+            medium_plan_json(),
+            [MediumTool()],
+            approval=lambda _r: False,
+            fixed_clock=fixed_clock,
+        )
+        task = agent.run("run the medium tool")
+        assert task.state is TaskState.CANCELLED
+        denied = agent.events.events_of_type(EventType.TOOL_DENIED)
+        assert len(denied) == 1
+        assert denied[0].data["reason"] == "approval_denied"
+
+    def test_execution_metadata_captured_on_completed_step(self, fixed_clock: Clock) -> None:
+        agent = build_agent(
+            _plan_json("demo_tool", {"message": "meta"}),
+            [DemoTool()],
+            fixed_clock=fixed_clock,
+        )
+        task = agent.run("Run the demo tool.")
+        assert task.state is TaskState.COMPLETED
+        started = agent.events.events_of_type(EventType.TOOL_STARTED)[0]
+        assert started.data["tool_name"] == "demo_tool"
+        # TOOL_REQUESTED precedes the permission-gated TOOL_STARTED.
+        types = event_types(agent)
+        assert types.index(EventType.TOOL_REQUESTED) < types.index(EventType.TOOL_STARTED)
 
 
 @pytest.mark.parametrize(
