@@ -36,4 +36,18 @@ class ToolExecutionError(AgentCoreError):
 
 
 class ProviderError(AgentCoreError):
-    """A model provider could not service a request."""
+    """A model provider could not service a request.
+
+    Base for all provider-level failures. Non-transient by default: the
+    gateway does not retry plain :class:`ProviderError`.
+    """
+
+
+class TransientProviderError(ProviderError):
+    """A provider failure that is safe to retry (timeout, 5xx, rate limit,
+    connection error). Retried by the model gateway with backoff."""
+
+
+class ProviderConfigurationError(ProviderError):
+    """Provider configuration is missing or invalid (unknown provider,
+    missing credentials, vendor SDK not installed). Not retryable."""

@@ -87,6 +87,32 @@ class TestModelPlanner:
         with pytest.raises(PlanningError, match="no tools available"):
             planner.plan("x", ToolRegistry().list_tools())
 
+    def test_request_carries_explicit_structured_contract(
+        self, demo_registry: ToolRegistry
+    ) -> None:
+        from agent_core.planner import plan_json_schema
+
+        planner, provider = make_planner(DEMO_PLAN_JSON)
+        planner.plan("Run the demo tool.", demo_registry.list_tools())
+        request = provider.requests[0]
+        assert request.response_format is not None
+        assert request.response_format["type"] == "json_object"
+        assert request.response_format["schema"] == plan_json_schema()
+
+    def test_markdown_fenced_json_is_accepted(self, demo_registry: ToolRegistry) -> None:
+        fenced = "```json\n" + DEMO_PLAN_JSON + "\n```"
+        planner, _ = make_planner(fenced)
+        plan = planner.plan("Run the demo tool.", demo_registry.list_tools())
+        assert plan.steps[0].tool_name == "demo_tool"
+
+    def test_markdown_fence_with_surrounding_text_is_rejected(
+        self, demo_registry: ToolRegistry
+    ) -> None:
+        messy = "Sure! Here is the plan:\n```json\n" + DEMO_PLAN_JSON + "\n```\nHope that helps!"
+        planner, _ = make_planner(messy)
+        with pytest.raises(PlanningError, match="not valid JSON"):
+            planner.plan("Run the demo tool.", demo_registry.list_tools())
+
     def test_provider_fault_wrapped_in_planning_error(self, demo_registry: ToolRegistry) -> None:
         class ExplodingProvider(MockModelProvider):
             def complete(self, request: ModelRequest) -> ModelResponse:

@@ -1,9 +1,21 @@
 """Planning: turn a user request into an ordered list of tool steps.
 
 The :class:`ModelPlanner` asks a :class:`~agent_core.providers.base.ModelProvider`
-for a strict-JSON plan and validates it against the registered tools. This
-is the same code path that will run against real providers in Phase 1 —
-tests exercise it with the mock provider, so no external API is needed.
+for a strict-JSON plan and validates it against the registered tools.
+
+Structured output contract (Phase 1):
+
+- The request carries an explicit machine-readable contract in
+  ``ModelRequest.response_format`` (``{"type": "json_object", "schema":
+  plan_json_schema()}``). Adapters with native JSON mode (e.g. OpenAI
+  ``json_object``) use it; adapters without it rely on the prompt.
+- Model output is **untrusted**: it is parsed as JSON (with tolerance for a
+  single markdown code fence, which real models emit despite instructions),
+  validated against the :class:`Plan` schema, and checked against the
+  registered tool names. Any deviation raises :class:`PlanningError` — an
+  invalid plan never reaches the executor.
+
+Tests exercise this against the mock provider, so no external API is needed.
 """
 
 from __future__ import annotations
@@ -47,6 +59,51 @@ class Plan(BaseModel):
     notes: str | None = None
 
 
+def plan_json_schema() -> dict[str, Any]:
+    """JSON-Schema (subset) contract for the plan structure.
+
+    Sent to the provider in ``ModelRequest.response_format`` and embedded in
+    the prompt. ``input`` is intentionally open (``object``) because each
+    tool defines its own input schema; the executor validates inputs
+    against the tool's own schema before running it.
+    """
+    return {
+        "type": "object",
+        "properties": {
+            "steps": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "tool_name": {"type": "string"},
+                        "description": {"type": "string"},
+                        "input": {"type": "object"},
+                    },
+                    "required": ["tool_name", "description"],
+                },
+            }
+        },
+        "required": ["steps"],
+    }
+
+
+def _strip_code_fence(content: str) -> str:
+    """Remove a single wrapping markdown code fence, if present.
+
+    Real models occasionally wrap JSON in ```json ... ``` despite
+    instructions. We tolerate exactly one outer fence and nothing else;
+    anything more complex is rejected by normal JSON parsing.
+    """
+    stripped = content.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        lines = lines[1:]  # drop the opening fence line (may carry a lang tag)
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]  # drop the closing fence
+        stripped = "\n".join(lines).strip()
+    return stripped
+
+
 class Planner(Protocol):
     """Any component that can turn a request into a plan."""
 
@@ -70,6 +127,9 @@ class ModelPlanner:
                 ChatMessage(role="system", content=self._system_prompt.format(tools=tools_json)),
                 ChatMessage(role="user", content=request),
             ],
+            # Explicit structured-output contract (Phase 1). Adapters with
+            # native JSON mode honor it; others rely on the prompt schema.
+            response_format={"type": "json_object", "schema": plan_json_schema()},
         )
         try:
             response = self._provider.complete(model_request)
@@ -79,7 +139,7 @@ class ModelPlanner:
 
     def _parse(self, content: str, specs: Sequence[ToolSpec]) -> Plan:
         try:
-            data: Any = json.loads(content)
+            data: Any = json.loads(_strip_code_fence(content))
         except json.JSONDecodeError as exc:
             raise PlanningError(f"plan is not valid JSON: {exc.msg} at position {exc.pos}") from exc
         if not isinstance(data, dict):

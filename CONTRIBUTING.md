@@ -20,10 +20,16 @@ source .venv/bin/activate
 
 pip install -e packages/agent-core   # the core library (editable)
 pip install pytest ruff mypy          # dev tools
+
+# only if you will develop/test against a real OpenAI model:
+pip install -e "packages/agent-core[openai]"
 ```
 
 Configuration is environment-based. If you want to override defaults, copy
-`.env.example` to `.env` (which is git-ignored). **Phase 0 needs no API keys.**
+`.env.example` to `.env` (which is git-ignored). **The default (mock) needs
+no API keys.** Real-provider settings: `MODEL_PROVIDER`, `MODEL_NAME`,
+`MODEL_TIMEOUT_S`, `MODEL_MAX_RETRIES`, and `OPENAI_API_KEY` (env only,
+never committed).
 
 ---
 
@@ -75,13 +81,36 @@ relevant roadmap phase.
 
 ## Adding a model provider
 
-1. Subclass `ModelProvider` and implement `complete()`
-   (optionally `stream()` / `embed()`).
-2. Set `name` and declare `capabilities`.
-3. Read any API key from the **environment** (never hard-code it).
-4. Add tests that exercise the new adapter without hitting the network
-   (e.g. via injection) plus a gated integration test.
-5. No core changes should be needed.
+Follow the `OpenAIProvider` pattern (Phase 1) so the core stays
+vendor-agnostic:
+
+1. Subclass `ModelProvider` in `providers/<name>_provider.py`; implement
+   `complete()` (optionally `stream()` / `embed()`); set `name` and declare
+   `capabilities`.
+2. **Lazy vendor import** — import the SDK inside methods (client
+   construction / request time), never at module top level, so
+   `import agent_core` works without the SDK installed.
+3. Add an **optional extra** in `packages/agent-core/pyproject.toml`
+   (e.g. `[project.optional-dependencies] <name> = [...]`) and a mypy
+   `ignore_missing_imports` override for the SDK in the root `pyproject.toml`.
+4. **Credentials from the environment only.** Read the key inside
+   `__init__`; raise `ProviderConfigurationError` (naming the variable, never
+   a value) when it is missing. Never store the key on the instance beyond
+   what the SDK client needs, and never put it in logs/errors.
+5. **Normalize errors** to the project hierarchy: timeouts/5xx/429/connection
+   → `TransientProviderError` (the gateway retries these); auth/config
+   problems → `ProviderConfigurationError`; everything else → `ProviderError`
+   with bounded, secret-free messages. Disable the SDK's own retry layer so
+   the `ModelGateway` owns retry policy.
+6. **Register the provider** in `providers/factory.py`
+   (`create_provider` + `SUPPORTED_PROVIDERS`). Nothing upstream (gateway,
+   planner, agent) changes.
+7. **Tests:** offline unit tests with a stub client (inject it via the
+   provider's `client`/constructor hook) covering request mapping, the error
+   map, and key-leakage; plus an opt-in live test gated on the env key
+   (skipped by default).
+8. Update `.env.example` (placeholders only) and the docs
+   (ARCHITECTURE.md, ROADMAP.md, SECURITY.md, README.md).
 
 ## Changing the core
 

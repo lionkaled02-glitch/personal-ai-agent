@@ -35,21 +35,28 @@ browser, computer control, voice, media, RAG, memory.
 
 ---
 
-## Phase 1 — Real model-provider adapters
+## Phase 1 — Model Gateway & real provider integration ✅ IMPLEMENTED
 
-Bring the core to life with a real language model behind the existing
-`ModelProvider` interface.
+A production-oriented gateway in front of the (unchanged) provider
+abstraction, plus one real provider adapter. The Mock provider remains the
+offline default; all tests run without credentials by default.
 
 | Item | Status |
 | --- | --- |
-| One real provider adapter (e.g. OpenAI *or* Anthropic) | NOT IMPLEMENTED |
-| Keys via environment variables only (`.env`, never committed) | NOT IMPLEMENTED |
-| Real `stream()` (and, if used, `embed()`) on the adapter | NOT IMPLEMENTED |
-| Planner quality: robust prompting, retries, token/size limits | NOT IMPLEMENTED |
-| Same end-to-end tests pass against the real provider (gated/off by default) | NOT IMPLEMENTED |
+| Model Gateway: provider selection, stable interface, error normalization | IMPLEMENTED |
+| Safe retry for transient failures (timeout/5xx/429/connection), bounded exponential backoff | IMPLEMENTED |
+| Request timeouts (transport-level, configurable) | IMPLEMENTED |
+| One real provider adapter (OpenAI Chat Completions, optional `openai` extra, lazy SDK import) | IMPLEMENTED |
+| Keys via environment variables only (never in Settings, logs, or source) | IMPLEMENTED |
+| Structured planning: explicit JSON contract + strict validation of model output | IMPLEMENTED |
+| OpenAI-compatible endpoints via `OPENAI_BASE_URL` (local servers, proxies) | IMPLEMENTED |
+| Opt-in live-provider test (skipped by default; runs only with `OPENAI_API_KEY`) | IMPLEMENTED |
+| Real `stream()` / `embed()` on the adapter | NOT IMPLEMENTED (deferred — not needed for planning) |
+| Second provider adapter (Anthropic, local models, ...) | NOT IMPLEMENTED (follow-up) |
 
-**Acceptance:** `Agent.run` works against a live model with no core changes;
-the mock still passes the default offline suite.
+**Acceptance (met):** `Agent.run` reaches a real model through the gateway
+with no core changes; the default offline suite (mock provider) passes with
+no credentials; malformed model output fails as a controlled `PlanningError`.
 
 ---
 

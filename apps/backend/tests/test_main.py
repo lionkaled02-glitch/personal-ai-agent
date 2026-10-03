@@ -30,3 +30,22 @@ def test_demo_request_completes(capsys: pytest.CaptureFixture[str]) -> None:
     assert "COMPLETED" in out
     assert "demo_tool" in out
     assert "hello from the agent core" in out
+
+
+def test_provider_misconfiguration_is_a_clean_error(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # openai selected but no key: controlled core error, exit code 2, logged
+    # as a single clean error line (no traceback).
+    monkeypatch.setenv("MODEL_PROVIDER", "openai")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    main_mod = _load_main()
+    main_fn = main_mod.main
+    with caplog.at_level("ERROR"):
+        rc = main_fn(["Run the demo tool."])
+    error_records = [r for r in caplog.records if r.levelno >= 40]
+    assert rc == 2
+    assert len(error_records) == 1
+    message = error_records[0].getMessage()
+    assert "ProviderConfigurationError" in message
+    assert "OPENAI_API_KEY" in message

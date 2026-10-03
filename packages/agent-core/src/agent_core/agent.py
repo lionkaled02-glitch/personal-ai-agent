@@ -14,12 +14,15 @@ from __future__ import annotations
 
 import uuid
 
+from .config import Settings
 from .demo_tools import DemoTool
 from .errors import PlanningError
 from .events import Clock, EventBus, EventType, utc_now
 from .executor import BasicVerifier, Executor, Verifier
 from .permissions import ApprovalCallback, PermissionManager
 from .planner import ModelPlanner, Planner
+from .providers.factory import build_gateway
+from .providers.gateway import ModelGateway
 from .providers.mock import MockModelProvider
 from .tasks import Task, TaskState, TaskStep
 from .tools import ToolRegistry
@@ -75,6 +78,38 @@ class Agent:
         provider = MockModelProvider()
         return cls(
             planner=ModelPlanner(provider),
+            registry=registry,
+            permissions=PermissionManager(approval=approval),
+            events=EventBus(clock=clock),
+            verifier=BasicVerifier(),
+            clock=clock,
+        )
+
+    @classmethod
+    def create_configured(
+        cls,
+        settings: Settings | None = None,
+        approval: ApprovalCallback | None = None,
+        clock: Clock | None = None,
+        gateway: ModelGateway | None = None,
+    ) -> Agent:
+        """An agent wired from configuration (Phase 1).
+
+        The model provider is selected via ``MODEL_PROVIDER`` and reached
+        through the :class:`~agent_core.providers.gateway.ModelGateway`.
+        With default settings (``MODEL_PROVIDER=mock``) the agent is fully
+        offline — the demo path — and requires no API keys.
+
+        Pass a pre-built ``gateway`` to reuse/inspect one (e.g. to log the
+        active provider name); otherwise it is built from ``settings``.
+        """
+        resolved = settings if settings is not None else Settings.from_env()
+        if gateway is None:
+            gateway = build_gateway(resolved)
+        registry = ToolRegistry()
+        registry.register(DemoTool())
+        return cls(
+            planner=ModelPlanner(gateway),
             registry=registry,
             permissions=PermissionManager(approval=approval),
             events=EventBus(clock=clock),

@@ -15,6 +15,11 @@ class TestFromEnv:
         assert settings.agent_name == "personal-agent"
         assert settings.log_level == "INFO"
         assert settings.data_root == Path("data")
+        # Phase 1 model-gateway defaults (safe: offline mock provider).
+        assert settings.model_provider == "mock"
+        assert settings.model_name == ""
+        assert settings.model_timeout_s == 60.0
+        assert settings.model_max_retries == 2
 
     def test_overrides(self) -> None:
         settings = Settings.from_env(

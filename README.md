@@ -5,17 +5,23 @@ A modular foundation for a **personal, autonomous AI agent**. The end goal
 on a computer/browser, and run multi-step workflows — with permissions,
 human approval, and verification.
 
-This repository currently contains **Phase 0: the Agent Core foundation** —
-the abstractions and a working end-to-end flow, deliberately *without* real
-external integrations (no live model API, no real tools, no browser, no
-computer control, no voice).
+This repository currently contains:
 
-> **Status: FOUNDATION ONLY.** Everything beyond the core is NOT IMPLEMENTED
-> on purpose. See [ROADMAP.md](ROADMAP.md) and [ARCHITECTURE.md](ARCHITECTURE.md).
+- **Phase 0: the Agent Core foundation** — the abstractions and a working
+  end-to-end flow.
+- **Phase 1: the Model Gateway & a real provider** — provider selection,
+  error normalization, safe retries/timeouts, and an OpenAI adapter. The
+  default remains the fully offline mock provider.
+
+Everything else (real tools, browser, computer control, voice, media,
+memory/RAG) is deliberately NOT IMPLEMENTED yet.
+
+> See [ROADMAP.md](ROADMAP.md) and [ARCHITECTURE.md](ARCHITECTURE.md) for
+> exactly what exists and what does not.
 
 ---
 
-## What is implemented (Phase 0)
+## What is implemented
 
 A single Python package, `agent-core`, that proves the architecture works:
 
@@ -35,7 +41,17 @@ A single Python package, `agent-core`, that proves the architecture works:
   No chain-of-thought is ever placed in events.
 - **Model provider abstraction** — `ModelProvider` ABC + a deterministic
   `MockModelProvider` used by tests and the demo. No API key required.
-- **One mock tool** (`demo_tool`) used for the first end-to-end test.
+- **Model Gateway (Phase 1)** — `ModelGateway` decorator that normalizes
+  provider errors and retries transient failures (timeout/5xx/429/connection)
+  with bounded backoff, plus a configuration-driven provider factory.
+- **Real provider (Phase 1)** — `OpenAIProvider` (Chat Completions) behind
+  the same interface; optional `openai` extra, lazy SDK import, env-based
+  credentials, configurable timeout, sanitized errors, OpenAI-compatible
+  `OPENAI_BASE_URL` support.
+- **Structured planning (Phase 1)** — explicit JSON contract in the model
+  request + strict validation of model output (invalid model output fails as
+  a controlled `PlanningError`, never an invalid plan).
+- **One mock tool** (`demo_tool`) used for the end-to-end tests.
 
 The **first end-to-end flow** is implemented and tested:
 
@@ -51,23 +67,28 @@ User Request → Agent → Planner → Tool Registry → Mock Tool → Result �
 .
 ├── apps/
 │   └── backend/
-│       ├── src/main.py          # demo entry point (mock provider, no API key)
+│       ├── src/main.py          # demo entry point (provider via MODEL_PROVIDER)
 │       └── tests/test_main.py   # smoke test for the entry point
 ├── packages/
 │   └── agent-core/              # the only importable package (src layout)
 │       ├── src/agent_core/
 │       │   ├── agent.py         # Agent facade (end-to-end orchestration)
 │       │   ├── tasks.py         # Task / TaskStep state machines
-│       │   ├── planner.py       # Plan, Planner, ModelPlanner
+│       │   ├── planner.py       # Plan, Planner, ModelPlanner, plan contract
 │       │   ├── executor.py      # Executor, Verifier, BasicVerifier
 │       │   ├── tools.py         # Tool, ToolSpec, ToolResult, ToolRegistry
 │       │   ├── schema.py        # minimal JSON-Schema (subset) validator
 │       │   ├── permissions.py   # levels, policy, PermissionManager
 │       │   ├── events.py        # EventType, AgentEvent, EventBus
-│       │   ├── config.py        # Settings (env-based)
+│       │   ├── config.py        # Settings (env-based, no secrets)
 │       │   ├── demo_tools.py    # DemoTool (the one mock tool)
 │       │   ├── errors.py        # exception hierarchy
-│       │   └── providers/       # base.ModelProvider + mock.MockModelProvider
+│       │   └── providers/
+│       │       ├── base.py      # ModelProvider ABC + request/response models
+│       │       ├── mock.py      # MockModelProvider (offline default)
+│       │       ├── gateway.py   # ModelGateway (normalization + safe retry)
+│       │       ├── factory.py   # provider selection from Settings/env
+│       │       └── openai_provider.py  # OpenAI adapter (optional extra)
 │       └── tests/               # deterministic, offline test suite
 ├── data/                        # runtime data (git-ignored, .gitkeep only)
 ├── .env.example                 # placeholder config (no secrets)
@@ -90,18 +111,34 @@ python3 -m venv .venv
 source .venv/bin/activate
 
 # 2. Install the core (editable) plus dev tools
+#    (add [openai] only if you will use a real OpenAI model)
 pip install -e packages/agent-core
 pip install pytest ruff mypy
 
-# 3. Run the test suite (offline, deterministic — no API keys)
+# 3. Run the test suite (offline, deterministic — no API keys needed)
 pytest
 
-# 4. Run the end-to-end demo (mock provider, no API keys)
+# 4. Run the end-to-end demo (mock provider by default, no API keys)
 python apps/backend/src/main.py "Run the demo tool."
 ```
 
-Configuration is environment-based. Copy `.env.example` to `.env` if you want
-to override defaults — but **no API keys are needed for Phase 0**.
+### Using a real model (optional)
+
+```bash
+pip install -e "packages/agent-core[openai]"   # optional vendor extra
+
+export MODEL_PROVIDER=openai
+export OPENAI_API_KEY="sk-..."                 # from your shell / .env — never commit it
+# optional: export MODEL_NAME=gpt-4o-mini
+# optional: export OPENAI_BASE_URL=...         # OpenAI-compatible endpoints
+
+python apps/backend/src/main.py "Run the demo tool."
+```
+
+Configuration is environment-based (see `.env.example`): provider selection
+(`MODEL_PROVIDER`), model name (`MODEL_NAME`), timeout (`MODEL_TIMEOUT_S`),
+and retry count (`MODEL_MAX_RETRIES`). Copy `.env.example` to `.env` to
+override defaults. **The default (`mock`) needs no API key and no network.**
 
 ---
 
@@ -131,8 +168,8 @@ pytest            # full test suite
 
 ## Not implemented yet (by design)
 
-Real model-provider adapters, real tools, computer control, browser
+A second real provider adapter (Anthropic, local models), streaming/
+embeddings, real tools with side effects, computer control, browser
 automation, voice, image/video generation, RAG, memory, presentation
-generation, and a user interface are all **future phases**. They are NOT in
-this foundation. Adding them is explicitly gated in
-[ROADMAP.md](ROADMAP.md).
+generation, and a user interface are all **future phases**. Adding them is
+explicitly gated in [ROADMAP.md](ROADMAP.md).

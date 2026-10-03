@@ -35,17 +35,21 @@ dependency direction (a layer may depend only on layers below it).
 ├────────────────────────────────────────────────────────────┤
 │  Specialized Agents     (browser/file/media/… agents)      │  NOT IMPLEMENTED
 ├────────────────────────────────────────────────────────────┤
+│  Model Gateway (Phase 1)                                  │  IMPLEMENTED
+│  provider selection, error normalization, safe retry      │
+├────────────────────────────────────────────────────────────┤
 │  External Providers / Computer / Browser / Files           │  PARTIAL (see below)
 └────────────────────────────────────────────────────────────┘
 ```
 
-**What "PARTIAL" means on the bottom row:** the *interfaces* for external
-providers exist (`ModelProvider`) and a deterministic mock is implemented.
-Real computer/browser/file providers are NOT IMPLEMENTED.
+**What "PARTIAL" means on the bottom row:** provider *interfaces* exist
+(`ModelProvider`), the deterministic mock provider is implemented, and one
+real adapter (OpenAI, optional extra) is implemented. Real
+computer/browser/file providers are NOT IMPLEMENTED.
 
-The implemented portion is the middle band: **Orchestrator → Planner → Tool
-Registry → Permission**, plus the events backbone that runs alongside all of
-it.
+The implemented portion is the middle band: **Orchestrator → Planner →
+Model Gateway → Provider → Tool Registry → Permission**, plus the events
+backbone that runs alongside all of it.
 
 ---
 
@@ -57,15 +61,18 @@ All implemented code lives in the single package
 | Module | Key types | Responsibility | Status |
 | --- | --- | --- | --- |
 | `tasks.py` | `Task`, `TaskStep`, `TaskState`, `StepStatus` | Task/step state machines with an enforced transition map. Supports multi-step workflows. | IMPLEMENTED |
-| `planner.py` | `Plan`, `PlanStep`, `Planner`, `ModelPlanner` | Turns a request into an ordered list of tool steps via strict-JSON, validated against registered tools. | IMPLEMENTED |
+| `planner.py` | `Plan`, `PlanStep`, `Planner`, `ModelPlanner`, `plan_json_schema` | Turns a request into an ordered list of tool steps. Sends an explicit structured-output contract (`response_format`), tolerates one markdown code fence, and validates output (JSON → `Plan` schema → known tool names) before anything runs. | IMPLEMENTED |
 | `executor.py` | `Executor`, `Verifier`, `BasicVerifier` | Runs a plan: permission check → approval → execute → verify → terminal state. Emits events. | IMPLEMENTED |
 | `tools.py` | `Tool`, `ToolSpec`, `ToolResult`, `ToolRegistry` | Tool abstraction + registry with controlled execution and JSON-Schema validation. | IMPLEMENTED |
 | `schema.py` | `validate_against_schema` | Minimal JSON-Schema (subset) validator: `type`, `properties`, `required`, `items`, `enum`. | IMPLEMENTED |
 | `permissions.py` | `PermissionLevel`, `PermissionPolicy`, `PermissionManager`, `ApprovalCallback` | Level-based policy decisions and fail-safe approval routing. | IMPLEMENTED |
 | `events.py` | `EventType`, `AgentEvent`, `EventBus` | Structured, in-memory event log + subscribers. Operational data only. | IMPLEMENTED |
-| `providers/base.py` | `ModelProvider`, `ModelRequest`, `ModelResponse`, `Capability` | Vendor-neutral model interface. `stream`/`embed` are declared but raise until an adapter implements them. | IMPLEMENTED (interface) / PLANNED (real adapters) |
-| `providers/mock.py` | `MockModelProvider` | Deterministic in-memory provider (scripted or keyword mode). No network, no key. | IMPLEMENTED |
-| `config.py` | `Settings` | Env-based configuration (`AGENT_NAME`, `LOG_LEVEL`, `DATA_ROOT`). No secrets. | IMPLEMENTED |
+| `providers/base.py` | `ModelProvider`, `ModelRequest`, `ModelResponse`, `Capability` | Vendor-neutral model interface. `stream`/`embed` are declared but raise until an adapter implements them. | IMPLEMENTED |
+| `providers/mock.py` | `MockModelProvider` | Deterministic in-memory provider (scripted or keyword mode). No network, no key. Default provider. | IMPLEMENTED |
+| `providers/gateway.py` | `ModelGateway` | `ModelProvider` decorator: normalizes provider errors, retries transient failures with bounded exponential backoff, passes structured responses through unchanged. Vendor-agnostic. | IMPLEMENTED |
+| `providers/factory.py` | `create_provider`, `build_gateway`, `SUPPORTED_PROVIDERS` | Configuration-driven provider selection (`MODEL_PROVIDER`) + gateway construction. The only place that knows provider names. | IMPLEMENTED |
+| `providers/openai_provider.py` | `OpenAIProvider` | Real Chat Completions adapter (optional `openai` extra, lazy SDK import). Env credentials, timeouts, sanitized error mapping. | IMPLEMENTED |
+| `config.py` | `Settings` | Env-based configuration (`AGENT_NAME`, `LOG_LEVEL`, `DATA_ROOT`, `MODEL_PROVIDER`, `MODEL_NAME`, `MODEL_TIMEOUT_S`, `MODEL_MAX_RETRIES`). No secrets. | IMPLEMENTED |
 | `demo_tools.py` | `DemoTool` | The one mock tool (`demo_tool`, LOW permission) used for the end-to-end test. | IMPLEMENTED |
 | `errors.py` | `AgentCoreError` + subclasses | Single exception hierarchy so agent failures are catchable. | IMPLEMENTED |
 | `agent.py` | `Agent` | Facade that wires planner + registry + permissions + events + executor into `run(request)`. | IMPLEMENTED |
@@ -81,8 +88,12 @@ each observable transition:
 
 ```
 1. TASK_CREATED        Task created (state CREATED), event emitted.
-2. → PLANNING          Planner plans via ModelProvider → strict-JSON Plan.
-   PLAN_CREATED        Plan steps validated (tool names exist, shapes ok).
+2. → PLANNING          Planner → Model Gateway → ModelProvider (mock or real).
+                       Provider response is parsed as strict JSON (one markdown
+                       fence tolerated) and validated against the Plan schema
+                       and the registered tool names → invalid output becomes
+                       a controlled PlanningError, never an invalid plan.
+   PLAN_CREATED        Plan validated (tool names exist, shapes ok).
 3. → RUNNING           Executor starts. For each step:
                          a. permission check (PermissionManager)
                          b. if REQUIRES_APPROVAL → APPROVAL_REQUIRED, ask channel
@@ -93,6 +104,12 @@ each observable transition:
 5. → COMPLETED         result set (last step output); or FAILED on verification failure.
    TASK_COMPLETED      (or TASK_FAILED / TASK_CANCELLED on the failure paths)
 ```
+
+Gateway behavior on the planning call (Phase 1): transient provider failures
+(timeout / 5xx / 429 / connection) are retried with bounded exponential
+backoff (`MODEL_MAX_RETRIES`); any non-project exception is normalized to a
+`ProviderError`; planning failures end the task as FAILED with a controlled
+error.
 
 The happy path for the request `"Run the demo tool."` emits exactly:
 
@@ -137,6 +154,27 @@ Each decision lists the *why*, per the AGENTS.md rule to document decisions.
   is NOT implemented.
 - **D8 — Deterministic tests.** A mock provider + an injectable clock keep the
   entire suite offline, reproducible, and free of API keys.
+- **D9 — Gateway as a decorator, not a new interface.** `ModelGateway`
+  implements the *existing* `ModelProvider` ABC, so the planner/agent are
+  unchanged and no second provider concept was introduced. Retry + error
+  normalization live in exactly one place (the gateway); adapters stay thin.
+  Streaming/embedding are delegated without retry (a half-consumed stream
+  cannot be replayed).
+- **D10 — Vendor SDKs are optional extras with lazy import.**
+  `agent-core[openai]` adds the OpenAI SDK; `import agent_core` works without
+  it (the SDK is imported only when the adapter actually builds a client or
+  runs a request). Selecting a provider whose extra is not installed is a
+  controlled `ProviderConfigurationError`.
+- **D11 — Structured output: contract + validation, not faith.** The planner
+  sends an explicit JSON contract in `ModelRequest.response_format`; adapters
+  with native JSON mode map it (OpenAI → `json_object`). Reliability comes
+  from post-validation (JSON parse → `Plan` schema → tool allow-list), so a
+  poorly-behaved model can never produce an invalid plan. One markdown code
+  fence is tolerated (real models emit it despite instructions).
+- **D12 — Timeouts at the transport, retries at the gateway.** The adapter
+  sets the HTTP timeout (`MODEL_TIMEOUT_S`) and disables the SDK's own
+  retries (`max_retries=0`) so retry policy exists in one place: the gateway,
+  with deterministic, testable backoff.
 
 ---
 
@@ -145,8 +183,12 @@ Each decision lists the *why*, per the AGENTS.md rule to document decisions.
 These are **NOT IMPLEMENTED** and must not be added prematurely
 (AGENTS.md rule 15). They are tracked in [ROADMAP.md](ROADMAP.md):
 
-- Real model-provider adapters (OpenAI / Anthropic / local models).
-- Streaming and embeddings (interface declared; behavior raises).
+- Second real provider adapter (Anthropic, local models, ...). Only OpenAI
+  exists today (plus the mock).
+- Streaming and embeddings (interface declared; all adapters raise until
+  implemented).
+- Native strict `json_schema` output mode (the openai adapter uses
+  `json_object` mode; see decision D11).
 - Real tools with side effects (files, web, shell, computer, browser).
 - Computer control and browser automation.
 - Voice I/O.
@@ -166,8 +208,11 @@ These are **NOT IMPLEMENTED** and must not be added prematurely
   register it in a `ToolRegistry`, declare the correct `permission_level`.
   No core changes.
 - **New model provider:** subclass `ModelProvider`, implement `complete()`
-  (and optionally `stream()`/`embed()`), declare `capabilities`. No core
-  changes.
+  (and optionally `stream()`/`embed()`), declare `capabilities`. Add an
+  optional extra in `packages/agent-core/pyproject.toml`, import the vendor
+  SDK **lazily** (keep the package importable without it), and register the
+  provider name in `providers/factory.py`. Everything upstream (gateway,
+  planner, agent) then works unchanged. See CONTRIBUTING.md for the pattern.
 - **New planner/verifier:** satisfy the `Planner` / `Verifier` protocols.
   Swap them into `Agent`.
 

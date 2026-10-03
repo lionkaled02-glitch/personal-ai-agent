@@ -40,14 +40,22 @@ later) are modeled in the state machine but **NOT IMPLEMENTED** yet.
 
 ## 2. Secrets handling
 
-- **Environment-based config only.** All tunables flow through
+- **Environment-based config only.** Non-secret tunables flow through
   `agent_core.config.Settings`, which reads plain environment variables
-  (`AGENT_NAME`, `LOG_LEVEL`, `DATA_ROOT`).
-- **No secrets in the foundation.** Phase 0 needs **no API keys** (the mock
-  provider is used). Key handling belongs in future provider adapters
-  (Phase 1) and will read from the environment only.
+  (`AGENT_NAME`, `LOG_LEVEL`, `DATA_ROOT`, `MODEL_PROVIDER`, `MODEL_NAME`,
+  `MODEL_TIMEOUT_S`, `MODEL_MAX_RETRIES`).
+- **`Settings` is secret-free by design.** Provider *credentials*
+  (`OPENAI_API_KEY`) are read from the environment by the provider factory
+  at construction time, passed straight to the vendor SDK, and never stored
+  on `Settings`, on the provider object, in logs, or in error messages.
+- **Default is keyless.** `MODEL_PROVIDER=mock` (the default) needs **no API
+  key** and no network; the entire default test suite runs without
+  credentials.
 - **Never commit credentials.** `.env` (and any real config) is git-ignored.
   Only `.env.example`, with **placeholder values**, is committed.
+- **Missing credentials fail cleanly.** Selecting `openai` without
+  `OPENAI_API_KEY` raises a controlled `ProviderConfigurationError` naming
+  the variable (never a value) — no crash, no network call, no invented key.
 - **Never expose secrets in logs or events.** See §3.
 
 Rules for contributors (mirrored in [AGENTS.md](AGENTS.md)):
@@ -72,18 +80,38 @@ no hard-coded secrets, no committed credentials, no secrets in logs/events.
 
 ## 4. Trust boundary & current attack surface
 
-**Implemented now (Phase 0):** the agent runs **entirely in-process** with a
-**deterministic mock provider** and **one harmless mock tool** (`demo_tool`).
-It makes **no network calls** and performs **no filesystem writes** outside
-the git-ignored `data/` directory (which is itself not written to yet).
+**Default path (mock provider):** the agent runs **entirely in-process**
+with the deterministic mock provider and one harmless mock tool
+(`demo_tool`). It makes **no network calls** and performs **no filesystem
+writes** outside the git-ignored `data/` directory (which is itself not
+written to yet).
 
-Consequently the current attack surface is minimal: the only untrusted input
-is the (mocked) model output, which is parsed as strict JSON and validated
-against the plan schema and the registered tool names before anything runs.
+**Opt-in path (real provider, Phase 1):** when `MODEL_PROVIDER=openai` is
+set, the agent makes HTTPS calls to the configured provider endpoint.
+Security properties of this path:
+
+- The **only** network egress is the provider's Chat Completions API
+  (or an explicitly configured `OPENAI_BASE_URL`). No shell, no filesystem
+  access, no other egress exists in the codebase.
+- **Model output is untrusted data.** It is parsed as strict JSON (one
+  markdown fence tolerated), validated against the plan schema, and checked
+  against the registered tool allow-list. An invalid or hostile model
+  response becomes a controlled `PlanningError` — it cannot name a tool that
+  is not registered, and tool inputs are schema-validated by the registry
+  before execution.
+- **Prompt injection cannot escalate privileges.** Even if a model (or data
+  it processed) tries to plan a dangerous action, only registered tools
+  exist, every tool is permission-gated (fail-safe), and no HIGH-permission
+  tool is registered today. There is no shell, no browser, no filesystem
+  tool.
+- **Provider errors are sanitized.** Error messages carry status codes and
+  bounded detail only; credentials never appear in them, in logs, or in
+  events.
+- **Retries are bounded and safe.** Only idempotent completion requests are
+  retried, at most `MODEL_MAX_RETRIES` times with capped backoff; the SDK's
+  own retry layer is disabled.
 
 **Future surface (NOT IMPLEMENTED, must be handled when built):**
-- Real model output is untrusted ⇒ keep schema validation + tool-name
-  allow-listing (already in the planner).
 - Real tools need per-tool scoping (e.g. files confined to `DATA_ROOT`).
 - Browser / computer control needs sandboxing, command allow/deny policies,
   and mandatory approval (Phases 5 & 7).
@@ -105,7 +133,11 @@ issue (do not post secrets or proof-of-concept exploit details publicly).
 | Permission levels + policy + fail-safe approvals | IMPLEMENTED |
 | Deny-list of tools | IMPLEMENTED |
 | Controlled tool execution (schema validation, exception containment) | IMPLEMENTED |
-| Secrets via environment variables, `.env` ignored, `.env.example` placeholders | IMPLEMENTED |
+| Credentials via environment variables only; `Settings` secret-free; `.env` ignored; `.env.example` placeholders | IMPLEMENTED |
+| Missing-credential and unknown-provider failures are clean, no network | IMPLEMENTED |
+| Provider error sanitization (no key material, bounded detail) | IMPLEMENTED |
+| Bounded, idempotent retry for transient provider failures | IMPLEMENTED |
+| Untrusted model output: strict JSON + plan schema + tool allow-list | IMPLEMENTED |
 | Operational-only events/logs, bounded payloads | IMPLEMENTED |
 | Synchronous human approval channel | PLANNED (wire-up in Phase 2) |
 | Persistent, redaction-aware audit log | PLANNED (Phase 9) |

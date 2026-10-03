@@ -24,6 +24,7 @@ from agent_core import (
     PermissionLevel,
     PermissionManager,
     PermissionPolicy,
+    Settings,
     StepStatus,
     TaskState,
     Tool,
@@ -298,6 +299,30 @@ class TestDemoFactory:
             "tool": "demo_tool",
             "message": "hello from the agent core",
         }
+
+
+class TestConfiguredFactory:
+    """Agent.create_configured (Phase 1): settings-driven provider wiring."""
+
+    def test_defaults_are_fully_offline(self, fixed_clock: Clock) -> None:
+        agent = Agent.create_configured(settings=Settings(), clock=fixed_clock)
+        task = agent.run("Run the demo tool.")
+        assert task.state is TaskState.COMPLETED
+        assert task.result is not None
+        assert task.created_at == FIXED_NOW
+
+    def test_mock_selection_via_settings(self, fixed_clock: Clock) -> None:
+        settings = Settings(model_provider="mock", model_name="test-model")
+        agent = Agent.create_configured(settings=settings, clock=fixed_clock)
+        task = agent.run("Run the demo tool.")
+        assert task.state is TaskState.COMPLETED
+
+    def test_unknown_provider_is_a_controlled_configuration_error(self) -> None:
+        from agent_core import ProviderConfigurationError
+
+        settings = Settings(model_provider="bogus")
+        with pytest.raises(ProviderConfigurationError, match="bogus"):
+            Agent.create_configured(settings=settings)
 
 
 @pytest.mark.parametrize(

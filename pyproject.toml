@@ -31,3 +31,16 @@ files = [
 [tool.pytest.ini_options]
 testpaths = ["packages/agent-core/tests", "apps/backend/tests"]
 addopts = "-q"
+markers = [
+    "live: tests that call a real external AI API (opt-in, skipped unless credentials are present)",
+]
+
+# The OpenAI SDK (and its httpx dependency) is an optional extra; keep type
+# checking working in minimal installs.
+[[tool.mypy.overrides]]
+module = "openai"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "httpx"
+ignore_missing_imports = true
