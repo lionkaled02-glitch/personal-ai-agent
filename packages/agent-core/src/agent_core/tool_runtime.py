@@ -42,7 +42,7 @@ from .errors import (
     ToolInputError,
     ToolNotFoundError,
 )
-from .events import Clock, EventBus, EventType, bounded_text, utc_now
+from .events import Clock, EventBus, EventType, bounded_text, bounded_value, utc_now
 from .permissions import PermissionDecision
 from .tools import ToolRegistry, ToolResult
 
@@ -94,7 +94,10 @@ class ToolRuntime:
             EventType.TOOL_STARTED,
             task_id=invocation.task_id,
             step_id=invocation.step_id,
-            data={"tool_name": invocation.tool_name, "input": invocation.input},
+            data={
+                "tool_name": invocation.tool_name,
+                "input": bounded_value(invocation.input),
+            },
         )
 
         try:
@@ -127,7 +130,10 @@ class ToolRuntime:
                 EventType.TOOL_COMPLETED,
                 task_id=invocation.task_id,
                 step_id=invocation.step_id,
-                data={"tool_name": invocation.tool_name, "output": result.output},
+                data={
+                    "tool_name": invocation.tool_name,
+                    "output": bounded_value(result.output),
+                },
             )
         else:
             self._events.emit(

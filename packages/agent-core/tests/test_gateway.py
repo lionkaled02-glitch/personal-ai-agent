@@ -251,4 +251,7 @@ class TestPlannerIntegration:
         assert agent.events is not None
         # Phase 2: the configured agent carries the default tool set
         # (demo tool + calculator/datetime/text_utils/json_utils).
-        assert len(agent.registry.list_tools()) == 5
+        # Phase 3 topology change (documented): the configured agent also
+        # registers the 9 workspace filesystem tools, so the default set is
+        # now 5 + 9 = 14 tools.
+        assert len(agent.registry.list_tools()) == 14

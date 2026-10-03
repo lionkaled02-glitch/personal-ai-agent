@@ -54,6 +54,30 @@ def bounded_text(text: str, limit: int = EVENT_TEXT_LIMIT) -> str:
     return text[: limit - 1] + "…"
 
 
+def bounded_value(value: Any, limit: int = EVENT_TEXT_LIMIT, max_items: int = 10) -> Any:
+    """Bound any JSON-like value for event payloads.
+
+    - strings are truncated via :func:`bounded_text`
+    - dicts are recursed key-by-key (keys are short and kept verbatim)
+    - lists are capped at ``max_items`` with a ``"… (N more)"`` marker
+    - scalars (bool/int/float/None) pass through unchanged
+
+    This keeps large tool I/O (e.g. file content) out of events while leaving
+    small payloads byte-identical.
+    """
+    if isinstance(value, str):
+        return bounded_text(value, limit)
+    if isinstance(value, dict):
+        return {key: bounded_value(item, limit, max_items) for key, item in value.items()}
+    if isinstance(value, list):
+        if len(value) <= max_items:
+            return [bounded_value(item, limit, max_items) for item in value]
+        kept = [bounded_value(item, limit, max_items) for item in value[:max_items]]
+        kept.append(f"… ({len(value) - max_items} more)")
+        return kept
+    return value
+
+
 @dataclass(frozen=True)
 class AgentEvent:
     """One structured, operational observation of agent activity."""
