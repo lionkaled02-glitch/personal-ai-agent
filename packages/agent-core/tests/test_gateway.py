@@ -257,4 +257,8 @@ class TestPlannerIntegration:
         # Phase 4 topology change (documented): the configured agent also
         # registers the 4 document tools (inspect/extract/index/search),
         # so the default set is now 5 + 9 + 4 = 18 tools.
-        assert len(agent.registry.list_tools()) == 18
+        # Phase 5 topology change (documented): the configured agent also
+        # registers the 5 memory tools (remember/recall/update_memory/
+        # forget/list_memories), so the default set is now
+        # 5 + 9 + 4 + 5 = 23 tools.
+        assert len(agent.registry.list_tools()) == 23

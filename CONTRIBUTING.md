@@ -172,6 +172,48 @@ document-specific rules:
    approval; MEDIUM denied ⇒ no mutation), boundary escapes, and at least
    one injection-style document proving content stays data.
 
+### Adding a memory tool, store, or retriever (Phase 5)
+
+Memory tools, stores, and retrievers follow the same spec+`run` contract,
+plus memory-specific rules:
+
+1. **Memory content is untrusted data.** Retrieved memory and document
+   content must never be executed or interpreted as instructions — not by
+   tools, the context builder, or the agent. Injection-style content is a
+   required test case for any new memory-facing code.
+2. **Creation stays explicit.** Never add implicit memory capture
+   (auto-saving messages, model outputs, or tool results). New memories
+   come through `remember` (MEDIUM, approval-gated) or a clearly defined
+   trusted internal pathway — document the pathway if you add one.
+3. **Policy is enforced at the store layer.** Enforce `MemoryLimits`
+   (allowed types, content chars, metadata bytes, item cap, recall cap) in
+   the store itself so no code path can bypass the caps; tool-layer
+   validation is UX, the store is the guarantee. Failures raise
+   `MemoryStoreError` with the stable codes — never partial writes.
+4. **Preserve determinism.** Stable ids (`make_memory_id`), ordering
+   (`created_at`, then `memory_id`), and id tie-breaks in ranking. If you
+   change recall ranking, update the determinism tests.
+5. **Preserve expiration semantics.** Only `short_term`/`working` may get
+   an implicit TTL; `long_term`/`knowledge` must never implicitly expire or
+   be purged. Expired/soft-forgotten memories are never "active".
+6. **Deletion stays safe.** `forget` soft-deactivates by default; hard
+   delete is an explicit opt-in behind HIGH-permission approval and affects
+   exactly one memory. Don't introduce recursive/batch deletion.
+7. **No new capability in the memory layer.** The `memory/`,
+   `memory_tools/`, and `rag/` packages are stdlib + pydantic only — a
+   static whitelist test enforces it. No network, no database drivers, no
+   subprocess/shell/eval/exec. A durable or vector backend implements the
+   `MemoryStore` / `MemoryRetriever` protocols as a *new* backend (see
+   ARCHITECTURE.md §6), not an addition to these modules.
+8. **Privacy in events.** Keep confirmations metadata-only (no content in
+   `remember` output/events); rely on `bounded_value` for the rest. Full
+   memory content must not appear in event payloads by default.
+9. **Register via `register_memory_tools`** and add tests: happy path per
+   tool, every structured error code, permission behavior (LOW runs without
+   approval; MEDIUM/HIGH denied ⇒ no mutation), immutable identity fields,
+   soft vs hard forget, expiration, limits, and at least one injection
+   proving content stays data.
+
 ## Adding a model provider
 
 Follow the `OpenAIProvider` pattern (Phase 1) so the core stays

@@ -27,10 +27,22 @@ This repository currently contains:
   (`inspect_document`, `extract_document`, `index_document`,
   `search_documents`) that read **only** through the Phase 3 workspace
   boundary. Document content is untrusted data, never instructions.
+- **Phase 5: memory & RAG foundation** — a strongly typed,
+  provider-neutral **memory model** (types, provenance, TTL, soft-delete)
+  behind the `MemoryStore` protocol (`InMemoryMemoryStore`), five
+  permission-gated memory tools (`remember` MEDIUM, `update_memory` MEDIUM,
+  `forget` HIGH, `recall` LOW, `list_memories` LOW), deterministic **lexical**
+  memory retrieval behind the `MemoryRetriever` protocol, and a
+  provider-neutral **RAG context builder** that combines retrieved memories +
+  document chunks into a structured, bounded, provenance-labeled context.
+  Memory creation is explicit (never automatic); memory and document content
+  is untrusted data, never instructions. Retrieval is lexical only — no
+  embeddings in this phase.
 
 Everything else (tools beyond the workspace boundary, web access, browser,
-computer control, voice, media, long-term memory, vector/semantic retrieval)
-is deliberately NOT IMPLEMENTED yet.
+computer control, voice, media, document/presentation generation, durable
+(persisted) memory, vector/semantic retrieval, and a user interface) is
+deliberately NOT IMPLEMENTED yet.
 
 > See [ROADMAP.md](ROADMAP.md) and [ARCHITECTURE.md](ARCHITECTURE.md) for
 > exactly what exists and what does not.
@@ -105,6 +117,45 @@ A single Python package, `agent-core`, that proves the architecture works:
   through the Phase 3 `Workspace` boundary, and document content is treated
   as untrusted data — it is never executed or interpreted as instructions.
   See SECURITY.md for the full security model.
+- **Memory & RAG foundation (Phase 5)** — a strongly typed,
+  provider-neutral `Memory` model (Pydantic): stable deterministic ids
+  (`mem-…`), lifecycle types (`short_term`/`working`/`long_term`/
+  `knowledge`), provenance (`user_explicit`/`task`/`agent`/`document`/
+  `system` + optional source ref), confidence, timestamps, optional
+  expiration, and a soft-delete `active` flag. Storage is behind the
+  `MemoryStore` protocol with the required `InMemoryMemoryStore`
+  (no external database, no network): limits and policy are enforced at the
+  store layer (allowed types, content length, metadata size, item cap,
+  conservative secret heuristic), ordering is deterministic
+  (`created_at`, then id), and `forget` is a soft deactivation by default
+  (hard delete is an explicit opt-in; a forget never touches other
+  memories). Expiration: `short_term`/`working` get an implicit TTL from
+  configuration; `long_term`/`knowledge` never expire implicitly and are
+  never purged (long-term protection). Creation is explicit — permission-
+  gated tools or a clearly defined trusted internal pathway; nothing ever
+  auto-persists conversation text. Retrieval is a provider-neutral,
+  deterministic **lexical** `MemoryRetriever` (token-based TF/IDF ranking,
+  stable tie-breaks; no embeddings, no external model) over the store, so a
+  future semantic provider plugs in without touching tools or the context
+  builder. Five permission-gated tools: `remember` (MEDIUM — explicit
+  creation, validated + bounded), `recall` (LOW — lexical, type filter,
+  bounded, provenance + stable ids), `update_memory` (MEDIUM — mutable
+  fields only; identity fields are immutable and rejected), `forget`
+  (HIGH — approval required; soft deactivation by default, hard delete
+  opt-in, single memory only), `list_memories` (LOW — filters, bounded,
+  public fields only). The `ContextBuilder` (RAG) combines retrieved
+  memories and document chunks into a structured, bounded `Context`:
+  memories first (recall order), then document chunks (search order);
+  every item carries kind (`memory` vs `document`), source id, source ref,
+  provenance category, and location (page/slide/sheet for documents);
+  the char/item budget is enforced with **explicit** omission reporting
+  (never silent); it assembles data only — it never generates answers and
+  never interprets retrieved content. Configuration: `MEMORY_MAX_ITEMS`,
+  `MEMORY_MAX_CONTENT_CHARS`, `MEMORY_MAX_METADATA_BYTES`,
+  `MEMORY_MAX_RECALL_RESULTS`, `MEMORY_MAX_CONTEXT_CHARS`,
+  `MEMORY_MAX_CONTEXT_ITEMS`, `MEMORY_SHORT_TERM_TTL_S`,
+  `MEMORY_WORKING_TTL_S`. See SECURITY.md for the trust model and
+  ARCHITECTURE.md (D18/D19) for the design decisions.
 - **One mock tool** (`demo_tool`) used for the end-to-end tests.
 
 The **first end-to-end flow** is implemented and tested:
@@ -142,6 +193,10 @@ User Request → Agent → Planner → Tool Registry → Mock Tool → Result �
 │       │   ├── documents/       # normalized model, parser registry, chunking,
 │       │   │                    #   retrieval (Phase 4)
 │       │   ├── document_tools/  # inspect/extract/index/search tools (Phase 4)
+│       │   ├── memory/          # Memory model, MemoryStore, lexical retrieval,
+│       │   │                    #   limits, secret guard (Phase 5)
+│       │   ├── memory_tools/    # remember/recall/update/forget/list tools (Phase 5)
+│       │   ├── rag/             # ContextBuilder: bounded memory+document context
 │       │   ├── tool_runtime.py  # ToolRuntime (permission-gated execution)
 │       │   ├── errors.py        # exception hierarchy
 │       │   └── providers/
@@ -231,10 +286,11 @@ pytest            # full test suite
 ## Not implemented yet (by design)
 
 A second real provider adapter (Anthropic, local models), streaming,
-semantic/vector retrieval over documents (the Phase 4 retrieval is lexical
-by design and swappable via the `RetrievalIndex` protocol), tools that leave
-the workspace boundary (web fetch/search, shell/command execution), computer
-control, browser automation, voice, image/video generation, long-term
-memory, presentation/document generation, and a user interface are all
-**future phases**. Adding them is explicitly gated in
+semantic/vector retrieval (the Phase 4 document and Phase 5 memory
+retrieval are lexical by design and swappable via the `RetrievalIndex` and
+`MemoryRetriever` protocols), durable (persisted) memory beyond the
+process lifetime, tools that leave the workspace boundary (web fetch/search,
+shell/command execution), computer control, browser automation, voice,
+image/video generation, presentation/document generation, and a user
+interface are all **future phases**. Adding them is explicitly gated in
 [ROADMAP.md](ROADMAP.md).

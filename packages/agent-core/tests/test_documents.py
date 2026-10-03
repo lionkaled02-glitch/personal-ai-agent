@@ -46,7 +46,9 @@ def parse_file(tmp_path: Path, name: str, data: bytes, limits: DocumentLimits = 
 
 class TestParsingFormats:
     def test_text(self, tmp_path: Path) -> None:
-        (tmp_path / "a.txt").write_text("hello world\r\nsecond line", encoding="utf-8")
+        # write_bytes so the fixture contains literal CRLF on every OS —
+        # write_text performs newline translation on Windows (\r -> \r\r\n).
+        (tmp_path / "a.txt").write_bytes(b"hello world\r\nsecond line")
         doc = parse_file(tmp_path, "a.txt", (tmp_path / "a.txt").read_bytes())
         assert doc.document_type == "text"
         assert doc.media_type == "text/plain"

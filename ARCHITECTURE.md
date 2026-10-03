@@ -73,7 +73,7 @@ All implemented code lives in the single package
 | `providers/gateway.py` | `ModelGateway` | `ModelProvider` decorator: normalizes provider errors, retries transient failures with bounded exponential backoff, passes structured responses through unchanged. Vendor-agnostic. | IMPLEMENTED |
 | `providers/factory.py` | `create_provider`, `build_gateway`, `SUPPORTED_PROVIDERS` | Configuration-driven provider selection (`MODEL_PROVIDER`) + gateway construction. The only place that knows provider names. | IMPLEMENTED |
 | `providers/openai_provider.py` | `OpenAIProvider` | Real Chat Completions adapter (optional `openai` extra, lazy SDK import). Env credentials, timeouts, sanitized error mapping. | IMPLEMENTED |
-| `config.py` | `Settings` | Env-based configuration (`AGENT_NAME`, `LOG_LEVEL`, `DATA_ROOT`, `MODEL_PROVIDER`, `MODEL_NAME`, `MODEL_TIMEOUT_S`, `MODEL_MAX_RETRIES`, `WORKSPACE_ROOT`, `WORKSPACE_MAX_*` limits, `DOCUMENT_MAX_*` / `DOCUMENT_CHUNK_*` limits). No secrets. | IMPLEMENTED |
+| `config.py` | `Settings` | Env-based configuration (`AGENT_NAME`, `LOG_LEVEL`, `DATA_ROOT`, `MODEL_PROVIDER`, `MODEL_NAME`, `MODEL_TIMEOUT_S`, `MODEL_MAX_RETRIES`, `WORKSPACE_ROOT`, `WORKSPACE_MAX_*` limits, `DOCUMENT_MAX_*` / `DOCUMENT_CHUNK_*` limits, `MEMORY_*` limits/TTLs). No secrets. | IMPLEMENTED |
 | `demo_tools.py` | `DemoTool` | The demo tool (`demo_tool`, LOW permission) used to prove the end-to-end flow. | IMPLEMENTED |
 | `builtin_tools/` | `CalculatorTool`, `DateTimeTool`, `TextUtilsTool`, `JsonUtilsTool`, `register_default_tools` | Safe, deterministic, side-effect-free built-in tools (all LOW permission, bounded input). Date/time is declared non-deterministic. No shell/network. | IMPLEMENTED |
 | `workspace.py` | `Workspace`, `WorkspaceError`, `WorkspaceLimits` | The workspace boundary: turns model-supplied (workspace-relative) paths into real filesystem paths with fail-closed resolution (no absolute paths, no `../` escape, no symlink/junction escape, no host-path leakage). | IMPLEMENTED |
@@ -85,8 +85,16 @@ All implemented code lives in the single package
 | `documents/chunking.py` | `split_text`, `chunk_document`, `ChunkingResult` | Deterministic bounded chunking: paragraph-aware, hard-splits oversized paragraphs with overlap carry, count-capped with an explicit truncation report. Preserves document/section ids and location metadata on every chunk. No embeddings. | IMPLEMENTED |
 | `documents/retrieval.py` | `KnowledgeStore`, `RetrievalIndex` (protocol) | Provider-neutral in-memory lexical index: add/replace/remove documents + chunks, `search` with deterministic TF/IDF token ranking, document filtering, and result caps. The protocol is the seam a future vector store implements without touching the model or tools. | IMPLEMENTED |
 | `document_tools/` | `InspectDocumentTool`, `ExtractDocumentTool`, `IndexDocumentTool`, `SearchDocumentsTool`, `register_document_tools` | Four permission-gated tools over the document layer (inspect/extract/search LOW, index MEDIUM). All paths resolve through the Phase 3 `Workspace`; inputs/outputs schema-validated; failures are structured `ToolResult`s, never crashes. | IMPLEMENTED |
+| `memory/models.py` | `Memory`, `MemoryType`, `SourceCategory`, `make_memory_id`, `metadata_size_bytes` | The memory model: Pydantic, provider-neutral, deterministic. Stable ids derived from (type, source, content, created_at); lifecycle types (`short_term`/`working`/`long_term`/`knowledge`); provenance (`user_explicit`/`task`/`agent`/`document`/`system` + optional source ref); confidence; timestamps; optional expiration; soft-delete `active` flag. | IMPLEMENTED |
+| `memory/limits.py` | `MemoryLimits` | Frozen, validated limits + policy (allowed types, content chars, metadata bytes, item cap, recall cap, context chars/items, short-term/working TTLs). From `Settings` (`MEMORY_*`). | IMPLEMENTED |
+| `memory/guards.py` | `contains_secret_like_content` | Conservative secret-content heuristic (credential shapes, token prefixes, key blocks, URL credentials). A heuristic, not a guarantee — the real guarantees are structural (explicit creation, data-only content). | IMPLEMENTED |
+| `memory/store.py` | `MemoryStore` (protocol), `InMemoryMemoryStore` | Provider-neutral storage + recall: `remember`/`get`/`update`/`forget`/`list`/`recall`/`purge_expired`. Policy enforced at the store layer (defense in depth); deterministic ordering; `forget` = soft deactivation by default (hard delete opt-in, single memory, never recursive); expiration with long-term protection (only `short_term`/`working` auto-expire/purge). No external DB, no network. | IMPLEMENTED |
+| `memory/retrieval.py` | `MemoryRetriever` (protocol), `LexicalMemoryRetriever` | The retrieval seam: deterministic lexical recall over the store (reuses the Phase 4 tokenizer; TF/IDF ranking, stable id tie-breaks; active + non-expired scope; type filter; bounded). A future semantic retriever implements the same protocol. | IMPLEMENTED |
+| `memory/errors.py` | `MemoryStoreError` + stable codes | Structured memory-domain failures: `memory_not_found`, `memory_invalid_input`, `memory_type_not_allowed`, `memory_limit_exceeded`, `memory_field_immutable`, `secret_like_content`. (Named `MemoryStoreError` so it never shadows the Python builtin `MemoryError`.) | IMPLEMENTED |
+| `memory_tools/` | `RememberTool`, `RecallTool`, `UpdateMemoryTool`, `ForgetTool`, `ListMemoriesTool`, `register_memory_tools` | Five permission-gated tools (remember/update MEDIUM, forget HIGH, recall/list LOW) over an explicit `MemoryStore`. Validation + limits at tool and store layer; immutable identity fields on update; forget soft by default; read outputs carry stable public fields only. | IMPLEMENTED |
+| `rag/context.py` | `ContextBuilder`, `Context`, `ContextItem`, `ContextRequest` | Provider-neutral RAG assembly: retrieved memories (via `MemoryRetriever`) + document chunks (via `RetrievalIndex`) into a structured, bounded, deterministically ordered context. Memories first, then documents; every item carries kind (`memory`/`document`), source id/ref, provenance, location; char/item budget with explicit omission reporting; assembly only — no answer generation, no interpretation of content. | IMPLEMENTED |
 | `errors.py` | `AgentCoreError` + subclasses | Single exception hierarchy so agent failures are catchable (incl. `PermissionDeniedError`, `ToolAlreadyRegisteredError`, `WorkspaceError`, `DocumentError`). | IMPLEMENTED |
-| `agent.py` | `Agent` | Facade that wires planner + registry + permissions + events + executor (+ knowledge store) into `run(request)`. `create_demo`/`create_configured` register the default tool set **plus the Phase 3 workspace tools and the Phase 4 document tools** (the configured agent builds its `KnowledgeStore` limits from `Settings`). | IMPLEMENTED |
+| `agent.py` | `Agent` | Facade that wires planner + registry + permissions + events + executor (+ knowledge store + memory store + context builder) into `run(request)`. `create_demo`/`create_configured` register the default tool set **plus the Phase 3 workspace tools, the Phase 4 document tools, and the Phase 5 memory tools** (the configured agent builds its `KnowledgeStore` and `MemoryLimits` from `Settings`). Exposes `knowledge_store`, `memory_store`, and `context_builder` as clean accessors. Memory retrieval is **explicit** (tool-driven); no memory is auto-injected into planning or model calls. | IMPLEMENTED |
 
 Entry point: `apps/backend/src/main.py` (demo, mock provider by default, no API key).
 
@@ -261,6 +269,56 @@ Each decision lists the *why*, per the AGENTS.md rule to document decisions.
   (`DOCUMENT_*` env vars) and fail-safe: size violations are structured
   errors, capacity violations produce **explicitly reported** truncation —
   never silent.
+- **D18 — Memory is explicit, typed, provider-neutral, and policy-enforced
+  at the store layer.** Phase 5 adds a `Memory` model + `MemoryStore`
+  protocol with the required `InMemoryMemoryStore` (no external DB, no
+  network). Key choices: (a) **creation is explicit** — a MEDIUM-permission
+  `remember` tool (or a clearly defined trusted internal pathway); nothing
+  auto-saves conversation text, so there is no implicit privacy loss and no
+  unbounded growth; (b) **identity is deterministic** — ids are pure
+  functions of (type, source, content, created_at), `remember` is
+  idempotent for identical inputs at the same instant, and ordering is
+  always `(created_at, memory_id)`; (c) **policy lives in one place** —
+  `MemoryLimits` (allowed types, content chars, metadata bytes, item cap,
+  recall cap, TTLs) is enforced by the *store itself* (defense in depth),
+  so no code path can bypass the caps; (d) **deletion is safe by default** —
+  `forget` is a soft deactivation (hidden from recall/active listings, kept
+  for audit, reversible via `update`), hard delete is an explicit `hard:
+  true` opt-in, both behind HIGH-permission approval, and a forget never
+  touches other memories; (e) **long-term protection is structural** —
+  `long_term`/`knowledge` get no implicit TTL and `purge_expired` only ever
+  touches `short_term`/`working`, so durable memory cannot silently
+  disappear (and, by (a), cannot silently appear); (f) **secrets are
+  rejected conservatively** — a heuristic guard blocks obvious credential
+  shapes, documented as a heuristic (never a guarantee); the real guarantee
+  is structural: memory is data, created explicitly, never auto-captured.
+  Identity fields (type, source, source_ref, created_at) are immutable by
+  construction — `update_memory` cannot change them, and attempting to is a
+  structured `memory_field_immutable` failure.
+- **D19 — RAG assembly is a bounded, provenance-preserving projection — not
+  an answer generator.** The `ContextBuilder` combines retrieved memories
+  (via the `MemoryRetriever` protocol) and retrieved document chunks (via
+  the Phase 4 `RetrievalIndex` protocol) into a structured `Context`. Key
+  choices: (a) **memory vs knowledge stay distinct but composable** — items
+  are explicitly typed `memory` or `document` with their own provenance
+  (memory source category / document path + page/slide/sheet location), so
+  downstream consumers can reason about trust and origin; a `knowledge`-type
+  memory is still a *memory* (a deliberately stored fact), never an implicit
+  document load; (b) **deterministic order** — memories in recall rank
+  order, then document chunks in search rank order, both deterministic
+  (stable id tie-breaks); (c) **bounded with explicit omission** — the char
+  budget (`MEMORY_MAX_CONTEXT_CHARS`) and item cap
+  (`MEMORY_MAX_CONTEXT_ITEMS`) are enforced by dropping whole items in
+  order, and every drop is reported in `omitted_items`/`truncated` —
+  provenance is never silently lost; (d) **assembly only** — the builder
+  retrieves, orders, and bounds; it never generates answers and never
+  interprets content. Retrieved memory and document content is untrusted
+  DATA: it is labeled as such in the context and is never executed,
+  converted into tool calls, or allowed to change permissions or bypass
+  approval (verified by security tests). The two retrieval protocols are
+  the seams: a future embedding/vector provider can replace
+  `LexicalMemoryRetriever`/`KnowledgeStore` without touching the builder,
+  the memory model, or the tools. No embeddings in this phase.
 
 ---
 
@@ -288,11 +346,15 @@ These are **NOT IMPLEMENTED** and must not be added prematurely
 - Image/video generation and presentation/document *generation*. (Reading &
   analyzing existing documents — TXT/MD/PDF/DOCX/PPTX/XLSX — is IMPLEMENTED
   in Phase 4; producing new documents is not.)
-- **Semantic/vector** retrieval (embeddings) and **persistent long-term
-  memory**. Phase 4 retrieval is deliberately *lexical* and deterministic
-  (in-memory `KnowledgeStore` behind the `RetrievalIndex` protocol); a vector
-  store and durable memory are future phases that plug into that same
-  protocol.
+- **Semantic/vector** retrieval (embeddings) for documents *or* memory.
+  Phase 4 document retrieval and Phase 5 memory retrieval are deliberately
+  *lexical* and deterministic (in-memory `KnowledgeStore` behind the
+  `RetrievalIndex` protocol; `InMemoryMemoryStore`/`LexicalMemoryRetriever`
+  behind the `MemoryStore`/`MemoryRetriever` protocols); a vector/embedding
+  backend is a future phase that plugs into those same protocols.
+- **Persistent (durable) memory** across process restarts. Phase 5 memory
+  is in-process only (`InMemoryMemoryStore`); a durable backend (e.g.
+  SQLite) is a future phase that implements the `MemoryStore` protocol.
 - Task Manager layer (task persistence, queueing, multi-task scheduling).
 - User interface and API layer (HTTP/WebSocket).
 - `WAITING_FOR_USER`, `PAUSED`, `TASK_PAUSED`, `TASK_RESUMED` are **modeled**
@@ -330,6 +392,17 @@ These are **NOT IMPLEMENTED** and must not be added prematurely
   `get_document`, `get_chunk`, `list_documents`, `search`) — e.g. a
   vector/embedding store — and pass it wherever a `KnowledgeStore` is
   injected. The document model and the four document tools stay unchanged.
+- **New memory backend (Phase 5 seam):** implement the `MemoryStore`
+  protocol (`limits`, `remember`, `get`, `update`, `forget`, `list`,
+  `recall`, `purge_expired`) — e.g. a durable SQLite or vector store — and
+  inject it via `Agent(memory_store=...)` / `register_memory_tools`. The
+  memory model, the five memory tools, and the context builder stay
+  unchanged; enforce the same policy at the store layer.
+- **New memory retriever (Phase 5 seam):** implement the `MemoryRetriever`
+  protocol (`recall`) — e.g. a semantic/embedding retriever over the same
+  or a different store — and pass it to the `ContextBuilder`. Ranking must
+  stay deterministic and bounded; the tool and builder contracts are
+  unchanged.
 - **New planner/verifier:** satisfy the `Planner` / `Verifier` protocols.
   Swap them into `Agent`.
 

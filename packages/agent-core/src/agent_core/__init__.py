@@ -32,9 +32,21 @@ index_document, search_documents) are permission-gated and read only through
 the Phase 3 workspace boundary. Document content is untrusted DATA, never
 instructions.
 
-Everything else (UI, browser/computer control, voice, media generation,
-full long-term memory, vector retrieval) is PLANNED — see ARCHITECTURE.md
-and ROADMAP.md at the repository root for what exists and what does not.
+Phase 5 (IMPLEMENTED): memory & RAG foundation. A strongly typed,
+provider-neutral ``Memory`` model (types, provenance, TTL, soft-delete)
+behind the ``MemoryStore`` protocol (``InMemoryMemoryStore``), five
+permission-gated memory tools (remember MEDIUM, update_memory MEDIUM,
+forget HIGH, recall LOW, list_memories LOW), deterministic lexical memory
+retrieval behind the ``MemoryRetriever`` protocol, and a provider-neutral
+``ContextBuilder`` (RAG) that combines memories + document chunks into a
+structured, bounded, provenance-labeled context. Memory creation is
+explicit (never automatic); retrieved memory and document content are
+untrusted DATA. Retrieval is lexical only — no embeddings in this phase.
+
+Everything else (document/presentation generation, browser/computer
+control, voice, media generation, semantic/vector retrieval, durable
+memory, UI) is PLANNED — see ARCHITECTURE.md and ROADMAP.md at the
+repository root for what exists and what does not.
 """
 
 from .agent import Agent
@@ -79,6 +91,28 @@ from .errors import (
 )
 from .events import AgentEvent, EventBus, EventType, bounded_text, bounded_value, utc_now
 from .executor import BasicVerifier, Executor, Verifier, VerifyResult
+from .memory import (
+    InMemoryMemoryStore,
+    LexicalMemoryRetriever,
+    Memory,
+    MemoryLimits,
+    MemoryRetriever,
+    MemoryStore,
+    MemoryStoreError,
+    MemoryType,
+    SourceCategory,
+    make_memory_id,
+    metadata_size_bytes,
+)
+from .memory_tools import (
+    MEMORY_TOOL_NAMES,
+    ForgetTool,
+    ListMemoriesTool,
+    RecallTool,
+    RememberTool,
+    UpdateMemoryTool,
+    register_memory_tools,
+)
 from .permissions import (
     ApprovalCallback,
     ApprovalRequest,
@@ -102,6 +136,7 @@ from .providers import (
     build_gateway,
     create_provider,
 )
+from .rag.context import Context, ContextBuilder, ContextItem, ContextRequest
 from .schema import validate_against_schema
 from .tasks import StepStatus, Task, TaskState, TaskStep
 from .tool_runtime import ToolInvocation, ToolRuntime
@@ -120,12 +155,18 @@ from .workspace_tools import (
     register_workspace_tools,
 )
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "DEMO_TOOL_NAME",
     "DOCUMENT_TOOL_NAMES",
+    "FORGET_TOOL_NAME",
+    "LIST_MEMORIES_TOOL_NAME",
+    "MEMORY_TOOL_NAMES",
+    "RECALL_TOOL_NAME",
+    "REMEMBER_TOOL_NAME",
     "SUPPORTED_PROVIDERS",
+    "UPDATE_MEMORY_TOOL_NAME",
     "Agent",
     "AgentCoreError",
     "AgentEvent",
@@ -135,6 +176,10 @@ __all__ = [
     "CalculatorTool",
     "Capability",
     "ChatMessage",
+    "Context",
+    "ContextBuilder",
+    "ContextItem",
+    "ContextRequest",
     "CopyFileTool",
     "CreateDirectoryTool",
     "DateTimeTool",
@@ -150,11 +195,21 @@ __all__ = [
     "Executor",
     "ExtractDocumentTool",
     "FileInfoTool",
+    "ForgetTool",
+    "InMemoryMemoryStore",
     "IndexDocumentTool",
     "InspectDocumentTool",
     "JsonUtilsTool",
     "KnowledgeStore",
+    "LexicalMemoryRetriever",
     "ListDirectoryTool",
+    "ListMemoriesTool",
+    "Memory",
+    "MemoryLimits",
+    "MemoryRetriever",
+    "MemoryStore",
+    "MemoryStoreError",
+    "MemoryType",
     "MockModelProvider",
     "ModelGateway",
     "ModelPlanner",
@@ -175,10 +230,13 @@ __all__ = [
     "ProviderConfigurationError",
     "ProviderError",
     "ReadTextFileTool",
+    "RecallTool",
+    "RememberTool",
     "RetrievalIndex",
     "SearchDocumentsTool",
     "SearchFilesTool",
     "Settings",
+    "SourceCategory",
     "StepStatus",
     "Task",
     "TaskState",
@@ -197,6 +255,7 @@ __all__ = [
     "ToolRuntime",
     "ToolSpec",
     "TransientProviderError",
+    "UpdateMemoryTool",
     "Verifier",
     "VerifyResult",
     "Workspace",
@@ -207,9 +266,12 @@ __all__ = [
     "bounded_value",
     "build_gateway",
     "create_provider",
+    "make_memory_id",
+    "metadata_size_bytes",
     "plan_json_schema",
     "register_default_tools",
     "register_document_tools",
+    "register_memory_tools",
     "register_workspace_tools",
     "utc_now",
     "validate_against_schema",

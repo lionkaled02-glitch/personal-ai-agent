@@ -39,6 +39,16 @@ Variables:
 - ``DOCUMENT_CHUNK_OVERLAP`` (int, default ``100`` — chunk overlap)
 - ``DOCUMENT_MAX_SEARCH_RESULTS`` (int, default ``10`` — retrieval cap)
 - ``DOCUMENT_MAX_QUERY_CHARS`` (int, default ``500`` — max query length)
+- ``MEMORY_MAX_ITEMS`` (int, default ``1000`` — max stored memories, Phase 5)
+- ``MEMORY_MAX_CONTENT_CHARS`` (int, default ``4000`` — max memory content
+  length; also bounds recall/context queries)
+- ``MEMORY_MAX_METADATA_BYTES`` (int, default ``4096`` — max serialized
+  metadata size per memory)
+- ``MEMORY_MAX_RECALL_RESULTS`` (int, default ``10`` — recall/list cap)
+- ``MEMORY_MAX_CONTEXT_CHARS`` (int, default ``8000`` — RAG context budget)
+- ``MEMORY_MAX_CONTEXT_ITEMS`` (int, default ``20`` — RAG context item cap)
+- ``MEMORY_SHORT_TERM_TTL_S`` (int, default ``3600`` — short_term TTL)
+- ``MEMORY_WORKING_TTL_S`` (int, default ``86400`` — working TTL)
 
 ``DATA_ROOT`` holds logs and task artifacts; it is independent of the
 workspace boundary, which the Phase 3 filesystem tools enforce strictly.
@@ -83,6 +93,15 @@ class Settings(BaseModel):
     document_chunk_overlap: int = 100
     document_max_search_results: int = 10
     document_max_query_chars: int = 500
+    # Memory layer (Phase 5) — limits + policy.
+    memory_max_items: int = 1_000
+    memory_max_content_chars: int = 4_000
+    memory_max_metadata_bytes: int = 4_096
+    memory_max_recall_results: int = 10
+    memory_max_context_chars: int = 8_000
+    memory_max_context_items: int = 20
+    memory_short_term_ttl_s: int = 3_600
+    memory_working_ttl_s: int = 86_400
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Settings:
@@ -143,6 +162,28 @@ class Settings(BaseModel):
             ),
             document_max_query_chars=int(
                 source.get("DOCUMENT_MAX_QUERY_CHARS", defaults.document_max_query_chars)
+            ),
+            memory_max_items=int(source.get("MEMORY_MAX_ITEMS", defaults.memory_max_items)),
+            memory_max_content_chars=int(
+                source.get("MEMORY_MAX_CONTENT_CHARS", defaults.memory_max_content_chars)
+            ),
+            memory_max_metadata_bytes=int(
+                source.get("MEMORY_MAX_METADATA_BYTES", defaults.memory_max_metadata_bytes)
+            ),
+            memory_max_recall_results=int(
+                source.get("MEMORY_MAX_RECALL_RESULTS", defaults.memory_max_recall_results)
+            ),
+            memory_max_context_chars=int(
+                source.get("MEMORY_MAX_CONTEXT_CHARS", defaults.memory_max_context_chars)
+            ),
+            memory_max_context_items=int(
+                source.get("MEMORY_MAX_CONTEXT_ITEMS", defaults.memory_max_context_items)
+            ),
+            memory_short_term_ttl_s=int(
+                source.get("MEMORY_SHORT_TERM_TTL_S", defaults.memory_short_term_ttl_s)
+            ),
+            memory_working_ttl_s=int(
+                source.get("MEMORY_WORKING_TTL_S", defaults.memory_working_ttl_s)
             ),
         )
 

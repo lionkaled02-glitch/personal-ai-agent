@@ -373,7 +373,20 @@ class TestWorkspaceBoundary:
         outside = tmp_path / "outside.txt"
         outside.write_text("secret", encoding="utf-8")
         link = workspace_root / "link.txt"
-        link.symlink_to(outside)
+        try:
+            link.symlink_to(outside)
+        except OSError as exc:
+            # On Windows, creating a symlink requires SeCreateSymbolicLinkPrivilege
+            # (elevation) or Developer Mode. When neither is available the OS
+            # raises WinError 1314 (ERROR_PRIVILEGE_NOT_HELD) *before* any
+            # application code under test runs. Skip only for that specific
+            # Windows condition; any other failure still fails the test.
+            if getattr(exc, "winerror", None) == 1314:
+                pytest.skip(
+                    "symlink creation unavailable: Windows symlink privilege "
+                    "(elevation/Developer Mode) not held"
+                )
+            raise
         result = call(tools, "inspect_document", {"path": "link.txt"})
         assert not result.ok
         assert result.error_code in ("security_violation", "path_outside_workspace")
