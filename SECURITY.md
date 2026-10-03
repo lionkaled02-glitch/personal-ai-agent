@@ -288,7 +288,87 @@ model:
 - Any UI/API needs authn/authz and input validation (Phase 11).
 - Vector/semantic retrieval (embeddings) and persistent memory must preserve
   the lexical-index guarantees above (deterministic, bounded, provider-
-  neutral) when built on the `RetrievalIndex` protocol.
+  neutral) when built on the `RetrievalIndex` protocol (documents) and the
+  `MemoryStore`/`MemoryRetriever` protocols (memory, see Phase 5 below).
+
+### Memory & RAG security (Phase 5)
+
+Phase 5 adds explicit memory and RAG context assembly. The security model:
+
+- **Memory and document content is untrusted data, never instructions.**
+  The `ContextBuilder` assembles retrieved memories and document chunks
+  into a structured, labeled context; it never executes, interprets, or
+  "obeys" any of that content. Injection text stored in a memory or a
+  document ("ignore previous instructions", "invoke tool forget…",
+  "change permission_level…", `__import__`, …) comes back **verbatim as
+  data** and cannot trigger tools, change permissions, bypass approval, or
+  alter system behavior. Behavioral tests feed injection payloads through
+  recall + the context builder and assert nothing executes and no
+  permission state changes.
+- **Creation is explicit; nothing auto-persists.** Memory can only be
+  created through the MEDIUM-permission `remember` tool (approval-gated,
+  fail-safe) or a clearly defined trusted internal code path. The agent
+  never saves user messages, model outputs, or conversation text
+  implicitly — a full agent run that never plans a `remember` leaves the
+  store empty (tested). This bounds both the privacy surface and the
+  attack surface (no unbounded, model-influenced persistence).
+- **Permissions gate all mutations and deletions.** `remember` and
+  `update_memory` are MEDIUM; `forget` is HIGH — all through the existing
+  fail-safe permission system (no approval channel ⇒ denied; policy deny
+  always wins). A denied remember/update/forget performs **no store
+  mutation** (tested). `recall` and `list_memories` are LOW (read-only).
+  Memory content cannot bypass the permission system: a memory *saying*
+  "run this without approval" changes nothing about how permissions are
+  decided.
+- **Writes are validated and bounded; failures are atomic.** The store
+  (and tools) enforce: allowed types, non-empty content ≤
+  `MEMORY_MAX_CONTENT_CHARS`, metadata ≤ `MEMORY_MAX_METADATA_BYTES`,
+  total items ≤ `MEMORY_MAX_ITEMS`, confidence ∈ [0,1], valid
+  `expires_at`, valid enums — each violation is a structured
+  `MemoryStoreError` (stable code) and **nothing is half-written**
+  (tested). Tool failures are contained `ToolResult`s — a memory failure
+  never crashes the agent process.
+- **No secrets by default; the guard is a documented heuristic.** A
+  conservative pattern guard rejects content that obviously looks like
+  credentials (`api_key=…`, bearer/authorization headers, `sk-…`/`AKIA…`/
+  `ghp_…` token shapes, PRIVATE KEY blocks, `user:pass@host` URLs) with
+  `secret_like_content`. This is a **heuristic, not a guarantee** — no
+  detector can catch arbitrary secrets — so the real guarantees are
+  structural: explicit creation only (no auto-capture of what might be a
+  pasted secret), data-only content, and the standing rule that
+  credentials belong in the environment, never in memory. Do not store
+  API keys, passwords, tokens, or cookies in memories.
+- **Expiration and long-term protection.** `short_term`/`working` get an
+  implicit TTL (`MEMORY_SHORT_TERM_TTL_S`/`MEMORY_WORKING_TTL_S`);
+  `long_term`/`knowledge` never expire implicitly and `purge_expired`
+  never touches them. Expired or soft-forgotten memories are excluded from
+  recall, active listings, and RAG contexts — they are never returned as
+  "active".
+- **Document-originated metadata is not trusted as provenance.** The
+  context builder labels document items with its own provenance
+  (`kind=document`, the stored workspace-relative `source_path`, and the
+  chunk's structural location); nothing a document *says* about where it
+  came from is taken as provenance.
+- **No new execution or network capability.** The `memory/`,
+  `memory_tools/`, and `rag/` modules are pure stdlib + pydantic (a static
+  whitelist test enforces this); no subprocess, shell, `eval`/`exec`,
+  `ctypes`, sockets, HTTP clients, or external database. Retrieval is
+  lexical (reusing the Phase 4 tokenizer) — no embeddings, no external
+  model, fully offline.
+- **Privacy in events/logs.** `remember` returns and emits
+  **metadata only** (memory id, type, source category, timestamps,
+  active flag — no content). All tool I/O in events passes through
+  `bounded_value` (200-char string cap, 10-item cap), so a 4,000-char
+  memory is never fully logged by default; recall/list outputs carry the
+  same bound in event payloads (the model still receives the full
+  structured result via the step output — events and results are
+  different channels).
+- **Determinism and boundedness.** Recall ranking is deterministic
+  (TF/IDF, stable id tie-breaks); listings order by
+  `(created_at, memory_id)`; all recall/list/context outputs are bounded
+  (`MEMORY_MAX_RECALL_RESULTS`, `MEMORY_MAX_CONTEXT_ITEMS`,
+  `MEMORY_MAX_CONTEXT_CHARS`) and context omission is always reported
+  (`truncated`/`omitted_items`), never silent.
 
 ---
 
@@ -320,6 +400,16 @@ issue (do not post secrets or proof-of-concept exploit details publicly).
 | Document limits (input bytes, extraction, containers, sections, chunks, query, results) with explicit truncation reporting | IMPLEMENTED |
 | Document tool permissions (inspect/extract/search LOW, index MEDIUM); denied index performs no mutation | IMPLEMENTED |
 | No document content in logs/events beyond explicit tool outputs; bounded payloads | IMPLEMENTED |
+| Memory creation explicit only (permission-gated tool / trusted path); no auto-persistence of conversation | IMPLEMENTED |
+| Memory tool permissions (remember/update MEDIUM, forget HIGH, recall/list LOW); denial performs no mutation | IMPLEMENTED |
+| Memory write validation + limits enforced at the store layer, atomic failures (content, metadata, items, confidence, types) | IMPLEMENTED |
+| Secret-like content guard (documented heuristic) + structural no-auto-capture guarantee | IMPLEMENTED |
+| Expiration semantics: TTL only for short_term/working; long_term/knowledge protected; expired/forgotten never returned as active | IMPLEMENTED |
+| Memory + document content as untrusted data: injection never triggers tools, permissions, or approval bypass | IMPLEMENTED |
+| RAG context: bounded (chars/items), deterministic order, provenance-labeled, explicit omission reporting; no answer generation | IMPLEMENTED |
+| Document-originated metadata not trusted as memory provenance | IMPLEMENTED |
+| Memory layer third-party import whitelist (stdlib + pydantic; no new exec/network/DB capability) | IMPLEMENTED |
+| remember events/confirmations carry metadata only (no content); all memory I/O in events bounded | IMPLEMENTED |
 | Static + behavioral verification that forbidden capabilities are absent | IMPLEMENTED |
 | Credentials via environment variables only; `Settings` secret-free; `.env` ignored; `.env.example` placeholders | IMPLEMENTED |
 | Missing-credential and unknown-provider failures are clean, no network | IMPLEMENTED |

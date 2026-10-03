@@ -740,6 +740,8 @@ class TestFactoryWiring:
         names = {spec.name for spec in agent.registry.list_tools()}
         # Phase 4 topology change (documented): the configured agent also
         # registers the 4 document tools.
+        # Phase 5 topology change (documented): the configured agent also
+        # registers the 5 memory tools.
         expected = {
             "list_directory",
             "read_text_file",
@@ -759,6 +761,11 @@ class TestFactoryWiring:
             "extract_document",
             "index_document",
             "search_documents",
+            "remember",
+            "recall",
+            "update_memory",
+            "forget",
+            "list_memories",
         }
         assert names == expected
 

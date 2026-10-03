@@ -177,24 +177,72 @@ mutation; the full Phase 0–3 suite still passes.
 - Retrieval is lexical (token-based) by design — no semantic matching;
   ranking quality is commensurate.
 - The `KnowledgeStore` is in-memory: the index does not survive a process
-  restart (durability is Phase 5).
+  restart (a durable backend is a future phase via the `RetrievalIndex`
+  protocol).
 - Chunk overlap is best-effort: carried tails are trimmed to fit the chunk
   size, so the *effective* overlap can be smaller than configured for
   large units.
 
 ---
 
-## Phase 5 — Memory & RAG
+## Phase 5 — Memory & RAG foundation ✅ IMPLEMENTED
 
-Persistent memory and semantic retrieval over documents. (Originally the
-planned Phase 4; renumbered after the Phase 4 document foundation.) The
-Phase 4 `RetrievalIndex` protocol is the seam this phase builds on.
+An explicit, permission-gated, **provider-neutral memory layer** plus a
+bounded, provenance-preserving **RAG context builder** that combines
+memories and Phase 4 document chunks. Memory creation is explicit (never
+automatic); all retrieved memory and document content is untrusted **data**,
+never instructions. Retrieval in this phase is **lexical** (deterministic,
+no embeddings, no external model) behind swappable protocols, so semantic/
+vector retrieval and durable storage remain future phases that plug into
+the same interfaces. See [SECURITY.md](SECURITY.md) for the security model
+and [ARCHITECTURE.md](ARCHITECTURE.md) §4 (D18–D19) for the design
+decisions.
 
 | Item | Status |
 | --- | --- |
-| Vector store + embeddings (via `ModelProvider.embed`) as a `RetrievalIndex` implementation | NOT IMPLEMENTED |
-| Retrieval tool upgrade (semantic search) + long/short-term memory | NOT IMPLEMENTED |
-| Persistent, durable store (survives process restarts) | NOT IMPLEMENTED |
+| `Memory` model: deterministic ids, types (short_term/working/long_term/knowledge), provenance (user_explicit/task/agent/document/system + source ref), confidence, timestamps, expiration, soft-delete flag | IMPLEMENTED |
+| `MemoryStore` protocol + required `InMemoryMemoryStore` (remember/get/update/forget/list/recall/purge_expired; deterministic ordering; no external DB, no network) | IMPLEMENTED |
+| Limits & policy (`MemoryLimits` from `MEMORY_*` settings): allowed types, content chars, metadata bytes, item cap, recall cap, context chars/items, TTLs — enforced at the store layer | IMPLEMENTED |
+| Expiration: implicit TTL only for short_term/working; long_term/knowledge never implicitly expire and are never purged (long-term protection) | IMPLEMENTED |
+| `forget`: soft deactivation by default (auditable, reversible), hard delete explicit opt-in, HIGH permission, single memory, never recursive | IMPLEMENTED |
+| `MemoryRetriever` protocol + `LexicalMemoryRetriever` (deterministic TF/IDF ranking, stable tie-breaks, type filter, active/non-expired scope, bounded) — **lexical only, no embeddings** | IMPLEMENTED |
+| Tools via the Tool Runtime: `remember` (MEDIUM), `update_memory` (MEDIUM, identity fields immutable), `forget` (HIGH), `recall` (LOW), `list_memories` (LOW) | IMPLEMENTED |
+| `ContextBuilder` (RAG): memories + document chunks → structured, bounded, deterministic `Context`; MEMORY vs DOCUMENT items with full provenance/location; explicit omission reporting; assembly only (no answer generation) | IMPLEMENTED |
+| Secret guard: conservative heuristic rejects obvious credential shapes (`secret_like_content`); documented as heuristic, structural guarantees are explicit creation + data-only content | IMPLEMENTED |
+| Agent integration: `memory_store` + `context_builder` exposed on `Agent`; default tool set is now 23 tools; no auto-injection of memories into model calls (retrieval is explicit & bounded) | IMPLEMENTED |
+| Security: injection in memory/document content never triggers tools, permissions, or approval bypass; no auto-persistence of conversation; no new subprocess/shell/network/DB capability (static + behavioral tests) | IMPLEMENTED |
+| Configuration: `MEMORY_MAX_ITEMS`, `MEMORY_MAX_CONTENT_CHARS`, `MEMORY_MAX_METADATA_BYTES`, `MEMORY_MAX_RECALL_RESULTS`, `MEMORY_MAX_CONTEXT_CHARS`, `MEMORY_MAX_CONTEXT_ITEMS`, `MEMORY_SHORT_TERM_TTL_S`, `MEMORY_WORKING_TTL_S` (defaults in `.env.example`) | IMPLEMENTED |
+| Vector store + embeddings (via `ModelProvider.embed`) as `MemoryRetriever`/`RetrievalIndex` implementations | NOT IMPLEMENTED (future — the protocols are the seam) |
+| Persistent, durable memory store (survives process restarts) as a `MemoryStore` implementation | NOT IMPLEMENTED (future) |
+
+**Acceptance (met):** memory CRUD/list/recall are deterministic (stable
+ids, `(created_at, memory_id)` ordering, id tie-breaks) and covered by
+tests for creation, retrieval, update, forget (soft/hard), listing, type
+filters, provenance, expiration, limits, and ordering; permission tests
+prove remember/update/forget require approval and that denial performs no
+mutation; security tests prove injection content (memory or document) is
+never executed, triggers no tools, and changes no permissions, that
+oversized/secret content is rejected atomically, that expired memories are
+excluded, that no conversation text is auto-persisted, and that the
+memory/RAG layers import only stdlib + pydantic; RAG context tests prove
+memory + document combination, provenance preservation (ids, refs,
+categories, locations), deterministic ordering, char/item budgets with
+explicit omission, and the MEMORY vs DOCUMENT distinction; the full
+Phase 0–4 suite still passes (regression).
+
+**Known limitations (by design or documented):**
+- Retrieval is lexical (token-based) by design — no semantic matching for
+  either documents (Phase 4) or memory (Phase 5); ranking quality is
+  commensurate. Embeddings/vector backends are a future phase.
+- The `InMemoryMemoryStore` is in-process: memories do not survive a
+  process restart (durability is a future `MemoryStore` implementation).
+- The secret-content guard is a heuristic (conservative patterns), not a
+  guarantee — credentials must never be stored in memory at all.
+- Naive datetimes are assumed UTC (documented contract); expiry is
+  evaluated against an injectable clock.
+- The context builder drops whole items (never truncates mid-item) to fit
+  the budget; omitted items are reported but not fetched further (bounded
+  retrieval at each layer).
 
 ---
 

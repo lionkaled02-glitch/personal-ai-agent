@@ -23,11 +23,16 @@ from .documents.retrieval import KnowledgeStore
 from .errors import PlanningError
 from .events import Clock, EventBus, EventType, bounded_text, utc_now
 from .executor import BasicVerifier, Executor, Verifier
+from .memory.limits import MemoryLimits
+from .memory.retrieval import LexicalMemoryRetriever
+from .memory.store import InMemoryMemoryStore, MemoryStore
+from .memory_tools import register_memory_tools
 from .permissions import ApprovalCallback, PermissionManager
 from .planner import ModelPlanner, Planner
 from .providers.factory import build_gateway
 from .providers.gateway import ModelGateway
 from .providers.mock import MockModelProvider
+from .rag.context import ContextBuilder
 from .tasks import Task, TaskState, TaskStep
 from .tools import ToolRegistry
 from .workspace import Workspace
@@ -47,12 +52,29 @@ class Agent:
         verifier: Verifier | None = None,
         clock: Clock | None = None,
         knowledge_store: KnowledgeStore | None = None,
+        memory_store: MemoryStore | None = None,
+        context_builder: ContextBuilder | None = None,
     ) -> None:
         self._planner = planner
         self._registry = registry
         self._permissions = permissions
         self._events = events
         self._knowledge_store = knowledge_store if knowledge_store is not None else KnowledgeStore()
+        self._memory_store = (
+            memory_store
+            if memory_store is not None
+            else InMemoryMemoryStore(MemoryLimits(), clock=clock if clock is not None else utc_now)
+        )
+        self._context_builder = (
+            context_builder
+            if context_builder is not None
+            else ContextBuilder(
+                memory_retriever=LexicalMemoryRetriever(self._memory_store),
+                knowledge_store=self._knowledge_store,
+                limits=self._memory_store.limits,
+                clock=clock if clock is not None else utc_now,
+            )
+        )
         self._executor = Executor(
             registry=registry,
             permissions=permissions,
@@ -75,9 +97,11 @@ class Agent:
         (apps/backend/src/main.py) and by integration tests. Registers the
         default tool set (demo tool + Phase 2 safe built-ins) plus the Phase 3
         workspace tools bound to the workspace root (default
-        ``data/workspace``) and the Phase 4 document tools bound to the same
-        boundary and an in-memory knowledge store. Filesystem and document
-        tools only act inside that boundary.
+        ``data/workspace``), the Phase 4 document tools bound to the same
+        boundary and an in-memory knowledge store, and the Phase 5 memory
+        tools bound to an in-memory memory store. Filesystem and document
+        tools only act inside the workspace boundary; memory is explicit
+        (permission-gated creation, never automatic).
         """
         registry = ToolRegistry()
         register_default_tools(registry)
@@ -86,6 +110,8 @@ class Agent:
         register_workspace_tools(registry, workspace)
         store = KnowledgeStore()
         register_document_tools(registry, workspace, store)
+        memory = InMemoryMemoryStore(MemoryLimits(), clock=clock)
+        register_memory_tools(registry, memory, clock=clock)
         provider = MockModelProvider()
         return cls(
             planner=ModelPlanner(provider),
@@ -95,6 +121,7 @@ class Agent:
             verifier=BasicVerifier(),
             clock=clock,
             knowledge_store=store,
+            memory_store=memory,
         )
 
     @classmethod
@@ -115,9 +142,11 @@ class Agent:
         Pass a pre-built ``gateway`` to reuse/inspect one (e.g. to log the
         active provider name); otherwise it is built from ``settings``.
         Registers the default tool set (demo tool + Phase 2 safe built-ins)
-        plus the Phase 3 workspace tools bound to ``settings.workspace_root``
-        and the Phase 4 document tools bound to the same boundary and an
-        in-memory knowledge store whose limits come from the settings.
+        plus the Phase 3 workspace tools bound to ``settings.workspace_root``,
+        the Phase 4 document tools bound to the same boundary and an
+        in-memory knowledge store whose limits come from the settings, and
+        the Phase 5 memory tools bound to an in-memory memory store whose
+        limits also come from the settings.
         """
         resolved = settings if settings is not None else Settings.from_env()
         if gateway is None:
@@ -128,6 +157,8 @@ class Agent:
         register_workspace_tools(registry, workspace)
         store = KnowledgeStore(DocumentLimits.from_settings(resolved))
         register_document_tools(registry, workspace, store)
+        memory = InMemoryMemoryStore(MemoryLimits.from_settings(resolved), clock=clock)
+        register_memory_tools(registry, memory, clock=clock)
         return cls(
             planner=ModelPlanner(gateway),
             registry=registry,
@@ -136,6 +167,7 @@ class Agent:
             verifier=BasicVerifier(),
             clock=clock,
             knowledge_store=store,
+            memory_store=memory,
         )
 
     @property
@@ -149,6 +181,14 @@ class Agent:
     @property
     def knowledge_store(self) -> KnowledgeStore:
         return self._knowledge_store
+
+    @property
+    def memory_store(self) -> MemoryStore:
+        return self._memory_store
+
+    @property
+    def context_builder(self) -> ContextBuilder:
+        return self._context_builder
 
     def run(self, request: str) -> Task:
         """Run one user request to a terminal task state."""

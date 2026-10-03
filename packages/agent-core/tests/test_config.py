@@ -48,3 +48,47 @@ class TestFromEnv:
         settings = Settings(log_level="WARNING")
         settings.configure_logging()
         assert logging.getLogger().level == logging.WARNING
+
+
+class TestMemorySettings:
+    def test_memory_defaults(self) -> None:
+        settings = Settings.from_env(env={})
+        assert settings.memory_max_items == 1_000
+        assert settings.memory_max_content_chars == 4_000
+        assert settings.memory_max_metadata_bytes == 4_096
+        assert settings.memory_max_recall_results == 10
+        assert settings.memory_max_context_chars == 8_000
+        assert settings.memory_max_context_items == 20
+        assert settings.memory_short_term_ttl_s == 3_600
+        assert settings.memory_working_ttl_s == 86_400
+
+    def test_memory_env_overrides(self) -> None:
+        settings = Settings.from_env(
+            env={
+                "MEMORY_MAX_ITEMS": "500",
+                "MEMORY_MAX_CONTENT_CHARS": "2000",
+                "MEMORY_MAX_METADATA_BYTES": "2048",
+                "MEMORY_MAX_RECALL_RESULTS": "5",
+                "MEMORY_MAX_CONTEXT_CHARS": "4000",
+                "MEMORY_MAX_CONTEXT_ITEMS": "10",
+                "MEMORY_SHORT_TERM_TTL_S": "1800",
+                "MEMORY_WORKING_TTL_S": "43200",
+            }
+        )
+        assert settings.memory_max_items == 500
+        assert settings.memory_max_content_chars == 2000
+        assert settings.memory_max_metadata_bytes == 2048
+        assert settings.memory_max_recall_results == 5
+        assert settings.memory_max_context_chars == 4000
+        assert settings.memory_max_context_items == 10
+        assert settings.memory_short_term_ttl_s == 1800
+        assert settings.memory_working_ttl_s == 43200
+
+    def test_memory_limits_built_from_settings(self) -> None:
+        from agent_core import MemoryLimits
+
+        settings = Settings.from_env(env={"MEMORY_MAX_ITEMS": "7"})
+        limits = MemoryLimits.from_settings(settings)
+        assert limits.max_items == 7
+        # Unset variables keep their defaults.
+        assert limits.max_content_chars == 4_000
