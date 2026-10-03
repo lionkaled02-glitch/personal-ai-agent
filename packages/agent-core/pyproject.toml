@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-core"
+version = "0.1.0"
+description = "Core abstractions for a modular personal autonomous AI agent: tasks, planner, executor, tools, permissions, events, model providers."
+readme = "README.md"
+requires-python = ">=3.11"
+# Deliberately minimal: the core must not depend on any vendor SDK.
+dependencies = ["pydantic>=2.7,<3"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_core"]
