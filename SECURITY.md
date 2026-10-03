@@ -13,8 +13,8 @@ Every tool declares a `permission_level` on its `ToolSpec`:
 | Level | Meaning (intended) | Default handling |
 | --- | --- | --- |
 | `LOW` | Read-only / harmless, no side effects | `ALLOWED` automatically |
-| `MEDIUM` | Some side effects, scoped (e.g. file ops inside `DATA_ROOT`) | `REQUIRES_APPROVAL` |
-| `HIGH` | Broad or irreversible (computer control, destructive ops) | `REQUIRES_APPROVAL` (stricter by policy) |
+| `MEDIUM` | Some side effects, scoped (workspace file writes/creates/copies/moves) | `REQUIRES_APPROVAL` |
+| `HIGH` | Broad or irreversible (e.g. `delete_file`; future computer control) | `REQUIRES_APPROVAL` (stricter by policy) |
 
 Decisions are produced by `PermissionManager` from a data-driven
 `PermissionPolicy` (per-level decision + an explicit **deny-list** of tool
@@ -27,7 +27,7 @@ tool is ever run.
   the step is **denied** — never silently allowed.
 - The deny-list overrides any level policy.
 - There is **no tool with shell access today**, and none may be added without
-  a HIGH level + approval + an explicit allow/deny policy (Phase 7).
+  a HIGH level + approval + an explicit allow/deny policy (Phase 8).
 
 ### Approval flow
 
@@ -72,7 +72,16 @@ no hard-coded secrets, no committed credentials, no secrets in logs/events.
   and task id, not payloads.
 - Model-generated text that does reach an event (e.g. a plan step
   description) is **bounded in length** to keep payloads concise.
-- A future persistent audit log (Phase 9) will serialize
+- **File contents are not logged by default.** `TOOL_STARTED`/`TOOL_COMPLETED`
+  payloads pass through `bounded_value`: long strings are truncated to an
+  excerpt and long lists capped, so a file read/write is observed as
+  operation + relative path + size + status, not as bulk content. The full
+  result is still returned to the model through the step output (events and
+  results are deliberately different channels).
+- **Workspace tool events carry only relative workspace paths** (POSIX
+  style) and metadata (size, count, error code) — never the absolute host
+  path and never directory listings of the host.
+- A future persistent audit log (Phase 10) will serialize
   `AgentEvent.to_dict()` — the on-disk format is fixed now so it can be made
   append-only and redaction-aware later.
 
@@ -81,11 +90,12 @@ no hard-coded secrets, no committed credentials, no secrets in logs/events.
 ## 4. Trust boundary & current attack surface
 
 **Default path (mock provider):** the agent runs **entirely in-process**
-with the deterministic mock provider and the safe built-in tool set
-(`demo_tool`, `calculator`, `datetime`, `text_utils`, `json_utils` — all
-side-effect-free). It makes **no network calls** and performs **no
-filesystem writes** outside the git-ignored `data/` directory (which is
-itself not written to yet).
+with the deterministic mock provider and the default tool set (Phase 2
+built-ins `demo_tool`, `calculator`, `datetime`, `text_utils`, `json_utils`,
+all side-effect-free, plus the Phase 3 workspace file tools). It makes **no
+network calls**. Filesystem access is confined to the configured workspace
+root (`WORKSPACE_ROOT`, default `data/workspace` — git-ignored); nothing
+outside that root can be read, written, or deleted through any tool.
 
 ### Tool runtime security (Phase 2)
 
@@ -103,11 +113,12 @@ itself not written to yet).
 - **Tool faults cannot crash the agent.** Exceptions are contained into a
   structured `ToolResult` with a machine-readable `error_code`.
 - **Built-in tools are safe by construction.** No shell, subprocess,
-  `eval`/`exec`, dynamic imports, sockets, HTTP clients, or filesystem
-  access anywhere in the core source (verified by
-  `tests/test_security_boundaries.py`). The calculator uses a hand-written
-  parser over an explicit operator allow-list (no exponentiation, no
-  identifiers); all built-in inputs are length-bounded.
+  `eval`/`exec`, dynamic imports, sockets, or HTTP clients anywhere in the
+  core source (verified by `tests/test_security_boundaries.py`). The
+  calculator uses a hand-written parser over an explicit operator allow-list
+  (no exponentiation, no identifiers); all built-in inputs are length-bounded.
+  The Phase 2 built-ins do not touch the filesystem at all; the only
+  filesystem access in the core is the Phase 3 workspace layer (below).
 - **Built-in tool inventory (all LOW permission):**
 
   | Tool | Purpose | Deterministic | Bounds |
@@ -117,11 +128,72 @@ itself not written to yet).
   | `text_utils` | length / word_count / line_count | yes | text ≤ 10,000 chars |
   | `json_utils` | validate/parse JSON, report shape | yes | text ≤ 100,000 chars |
 
-- **Explicitly NOT present in Phase 2** (forbidden, and test-verified
-  absent): unrestricted subprocess/PowerShell/cmd.exe, arbitrary Python
-  execution, arbitrary filesystem modification, arbitrary network requests,
+- **Explicitly NOT present** (forbidden, and test-verified absent):
+  unrestricted subprocess/PowerShell/cmd.exe, arbitrary Python execution,
+  arbitrary (unscoped) filesystem modification, arbitrary network requests,
   browser/GUI automation, mouse/keyboard control, email, purchases,
-  account/security changes, destructive operations.
+  account/security changes.
+
+### Workspace filesystem security (Phase 3)
+
+The nine workspace tools are the **only** filesystem surface in the core.
+Their security model:
+
+- **Model-supplied paths are untrusted input.** Every tool receives
+  *workspace-relative* paths; absolute paths (POSIX or Windows drive/UNC
+  forms) are rejected even when they would land inside the root.
+- **Containment is decided on the fully resolved path, never by string
+  prefix.** `Workspace.resolve()` canonicalizes the candidate with
+  `Path.resolve()` — which follows the whole chain of symlinks, Windows
+  junctions, and reparse points — and requires the result to equal the root
+  or be under it. `../` segments, `a/..` tricks, and a symlink inside the
+  workspace that points outside all fail the same check
+  (`path_outside_workspace`).
+- **Fail closed.** NUL bytes, over-long paths, non-string inputs, and any
+  resolution/OS failure that prevents proving containment are rejected with
+  a structured error (e.g. `security_violation`) — the operation is never
+  attempted when safety cannot be guaranteed.
+- **No protected-location list is needed** because containment, not an
+  allow-list, is the control: the workspace root is explicitly configured
+  (`WORKSPACE_ROOT`), and pointing it at a sensitive location is a
+  deployment decision documented in `.env.example` (with a warning not to do
+  so).
+- **Symlinks are never followed when walking.** `search_files` and
+  directory listing use `followlinks=False` / non-following stat, so a
+  symlinked directory cannot smuggle outside files into results.
+- **Permissions gate every mutation.** LOW (list/read/info/search) runs
+  automatically; MEDIUM (create/write/copy/move) and HIGH (delete) require
+  explicit approval through the fail-safe mechanism — a denied operation
+  never performs the filesystem action (test-verified).
+- **Bounded and atomic.** File reads/copies are capped
+  (`WORKSPACE_MAX_READ_BYTES`), writes capped (`WORKSPACE_MAX_WRITE_BYTES`)
+  and written atomically (temp file + rename), listings and search capped
+  (`WORKSPACE_MAX_LIST_ENTRIES`, `WORKSPACE_MAX_SEARCH_RESULTS`) with a
+  `truncated` flag. Writes/copy/move never create parent directories
+  implicitly; `delete_file` is files-only (no recursive directory deletion,
+  never the root).
+- **Structured, non-leaking errors.** Stable codes (`path_outside_workspace`,
+  `path_not_found`, `source_not_found`, `target_exists`, `not_a_file`,
+  `not_a_directory`, `file_too_large`, `content_too_large`, `decode_error`,
+  `invalid_encoding`, `invalid_path`, `invalid_content`,
+  `unsupported_operation`, `permission_denied`, `filesystem_error`,
+  `security_violation`, ...) plus a message that contains only the
+  workspace-relative path the caller supplied — never the absolute host
+  path.
+
+**Workspace tool inventory (Phase 3):**
+
+  | Tool | Permission | Key bounds / notes |
+  | --- | --- | --- |
+  | `list_directory` | LOW | sorted, capped entries, symlink entries reported as `symlink` |
+  | `read_text_file` | LOW | explicit encoding (default UTF-8), size cap, decode errors structured |
+  | `write_text_file` | MEDIUM | explicit `overwrite`, size cap, atomic, no implicit mkdir |
+  | `create_directory` | MEDIUM | nested creation, idempotent, never the root |
+  | `copy_file` | MEDIUM | explicit `overwrite`, source size cap, atomic destination write |
+  | `move_file` | MEDIUM | explicit `overwrite`, `os.replace` (same filesystem) |
+  | `delete_file` | **HIGH** | files only; directories and the root are `unsupported_operation` |
+  | `file_info` | LOW | missing path is a successful `exists:false` answer |
+  | `search_files` | LOW | glob-style `*`/`?`/`[seq]` on the relative POSIX path (no regex), result cap, no symlink following |
 
 **Opt-in path (real provider, Phase 1):** when `MODEL_PROVIDER=openai` is
 set, the agent makes HTTPS calls to the configured provider endpoint.
@@ -138,9 +210,10 @@ Security properties of this path:
   before execution.
 - **Prompt injection cannot escalate privileges.** Even if a model (or data
   it processed) tries to plan a dangerous action, only registered tools
-  exist, every tool is permission-gated (fail-safe), and no HIGH-permission
-  tool is registered today. There is no shell, no browser, no filesystem
-  tool.
+  exist and every tool is permission-gated (fail-safe). The only
+  HIGH-permission tool is `delete_file` (single file, inside the workspace,
+  explicit approval required); the MEDIUM workspace tools stay inside the
+  boundary by construction. There is no shell and no browser.
 - **Provider errors are sanitized.** Error messages carry status codes and
   bounded detail only; credentials never appear in them, in logs, or in
   events.
@@ -149,11 +222,12 @@ Security properties of this path:
   own retry layer is disabled.
 
 **Future surface (NOT IMPLEMENTED, must be handled when built):**
-- Side-effecting tools (files, web) need per-tool scoping (e.g. files
-  confined to `DATA_ROOT`) and MEDIUM/HIGH permission levels.
+- Side-effecting tools beyond the workspace boundary (web fetch/search)
+  need per-tool scoping and MEDIUM/HIGH permission levels; any process or
+  shell execution would be HIGH and require an explicit policy.
 - Browser / computer control needs sandboxing, command allow/deny policies,
-  and mandatory approval (Phases 5 & 7).
-- Any UI/API needs authn/authz and input validation (Phase 9).
+  and mandatory approval (Phases 6 & 8).
+- Any UI/API needs authn/authz and input validation (Phase 10).
 
 ---
 
@@ -175,6 +249,10 @@ issue (do not post secrets or proof-of-concept exploit details publicly).
 | Tool input + output schema validation with structured failures | IMPLEMENTED |
 | Structured tool results (`error_code` + execution `metadata`) | IMPLEMENTED |
 | Safe built-in tools (LOW, bounded, no side effects) | IMPLEMENTED |
+| Workspace boundary: resolved-path containment, no symlink/junction escape, fail-closed | IMPLEMENTED |
+| Workspace file tools (9, scoped, LOW/MEDIUM/HIGH, bounded, atomic writes) | IMPLEMENTED |
+| Delete is HIGH + fail-safe approval; denial never executes the filesystem action | IMPLEMENTED |
+| Event payload bounding (`bounded_value`); no file contents / host paths in events | IMPLEMENTED |
 | Static + behavioral verification that forbidden capabilities are absent | IMPLEMENTED |
 | Credentials via environment variables only; `Settings` secret-free; `.env` ignored; `.env.example` placeholders | IMPLEMENTED |
 | Missing-credential and unknown-provider failures are clean, no network | IMPLEMENTED |
@@ -183,6 +261,6 @@ issue (do not post secrets or proof-of-concept exploit details publicly).
 | Untrusted model output: strict JSON + plan schema + tool allow-list | IMPLEMENTED |
 | Operational-only events/logs, bounded payloads | IMPLEMENTED |
 | Synchronous human approval channel | PLANNED (wire-up in Phase 2) |
-| Persistent, redaction-aware audit log | PLANNED (Phase 9) |
-| Sandboxing / command policies for real tools | NOT IMPLEMENTED (Phases 2/5/7) |
-| UI/API authentication | NOT IMPLEMENTED (Phase 9) |
+| Persistent, redaction-aware audit log | PLANNED (Phase 10) |
+| Sandboxing / command policies for real tools | NOT IMPLEMENTED (Phases 2/6/8) |
+| UI/API authentication | NOT IMPLEMENTED (Phase 10) |

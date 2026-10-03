@@ -1,15 +1,18 @@
 # agent-core
 
 The only importable package in this repository. It contains the Phase 0
-foundation, the Phase 1 model layer, and the Phase 2 tool layer of the
-personal AI agent: task state model, planner, executor, tool system with
-registry, permission manager, structured event bus, a vendor-neutral
-`ModelProvider` interface with a `ModelGateway` (error normalization + safe
-retry), a configuration-driven provider factory, a deterministic mock
-provider (offline default), an OpenAI provider adapter (optional `openai`
-extra, lazy SDK import), and the **Tool Runtime** — permission-gated,
-schema-validated, metadata-carrying tool execution — with a set of safe,
-deterministic built-in tools (calculator, date/time, text utils, JSON utils).
+foundation, the Phase 1 model layer, the Phase 2 tool layer, and the Phase 3
+workspace layer of the personal AI agent: task state model, planner,
+executor, tool system with registry, permission manager, structured event
+bus, a vendor-neutral `ModelProvider` interface with a `ModelGateway`
+(error normalization + safe retry), a configuration-driven provider factory,
+a deterministic mock provider (offline default), an OpenAI provider adapter
+(optional `openai` extra, lazy SDK import), the **Tool Runtime** —
+permission-gated, schema-validated, metadata-carrying tool execution — safe,
+deterministic built-in tools (calculator, date/time, text utils, JSON utils),
+and the **workspace filesystem layer**: a fail-closed `Workspace` boundary
+plus nine scoped, permission-gated file tools (list/read/write/create-dir/
+copy/move/delete/file-info/search; no shell or subprocess).
 
 - Architecture: see [`ARCHITECTURE.md`](../../ARCHITECTURE.md)
 - Engineering rules: see [`AGENTS.md`](../../AGENTS.md)

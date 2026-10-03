@@ -96,6 +96,36 @@ pure `run`.
 Do **not** add tools with shell access, unrestricted filesystem or network
 access, or broad side effects before the relevant roadmap phase.
 
+### Adding a workspace tool (Phase 3)
+
+Workspace filesystem tools follow the same spec+`run` contract, plus
+workspace-specific rules:
+
+1. **Construct the tool with the `Workspace`** it operates on (see
+   `workspace_tools/`) — never with a raw path and never without one.
+2. **Resolve every path through `Workspace.resolve`** (or the `require_file`
+   / `require_directory` / `require_source` helpers in
+   `workspace_tools/_common.py`). Never build host paths yourself, and never
+   rely on string-prefix checks for containment.
+3. **Never coerce input.** Use `require_str_field` for required string
+   inputs; malformed types fail closed with a structured error.
+4. **Bound the operation** with the configured limits
+   (`WorkspaceLimits`): file sizes for read/copy/write, entry counts for
+   listing/search, path length. Report truncation with a `truncated` flag.
+5. **Return the documented stable error codes** (`path_outside_workspace`,
+   `path_not_found`, `source_not_found`, `target_exists`, `not_a_file`,
+   `not_a_directory`, `file_too_large`, `content_too_large`, `decode_error`,
+   `invalid_encoding`, `invalid_path`, `invalid_content`,
+   `unsupported_operation`, `filesystem_error`, `security_violation`, …).
+   Messages must contain only the workspace-relative path — never the
+   absolute host path, never file contents.
+6. **Keep it inside the boundary:** no `subprocess`, no `shutil`-style
+   helpers that could follow links out, no directory deletion, no implicit
+   `mkdir` on write/copy/move, atomic writes where practical.
+7. **Register via `register_workspace_tools`** (keeps the workspace tool
+   set auditable as one unit) and add tests for the happy path, every
+   error code you can trigger, and at least one escape attempt.
+
 ## Adding a model provider
 
 Follow the `OpenAIProvider` pattern (Phase 1) so the core stays

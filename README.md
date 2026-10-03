@@ -15,9 +15,14 @@ This repository currently contains:
 - **Phase 2: the Tool Runtime & safe built-in tools** — a permission-gated,
   schema-validated, metadata-carrying tool execution layer plus deterministic
   built-in tools (calculator, date/time, text utils, JSON utils).
+- **Phase 3: system & workspace tools** — nine filesystem tools
+  (list/read/write/create-dir/copy/move/delete/file-info/search) that work
+  **only inside an explicitly configured workspace boundary**
+  (`WORKSPACE_ROOT`). No shell, subprocess, or arbitrary code execution.
 
-Everything else (side-effecting tools, browser, computer control, voice,
-media, memory/RAG) is deliberately NOT IMPLEMENTED yet.
+Everything else (tools beyond the workspace boundary, web access, browser,
+computer control, voice, media, memory/RAG) is deliberately NOT IMPLEMENTED
+yet.
 
 > See [ROADMAP.md](ROADMAP.md) and [ARCHITECTURE.md](ARCHITECTURE.md) for
 > exactly what exists and what does not.
@@ -63,6 +68,13 @@ A single Python package, `agent-core`, that proves the architecture works:
 - **Safe built-in tools (Phase 2)** — `calculator` (hand-written parser, no
   `eval`), `datetime` (IANA timezones, declared non-deterministic),
   `text_utils`, `json_utils`. All LOW-permission, bounded, side-effect-free.
+- **Workspace filesystem tools (Phase 3)** — `list_directory`,
+  `read_text_file`, `write_text_file`, `create_directory`, `copy_file`,
+  `move_file`, `delete_file`, `file_info`, `search_files`. All paths resolve
+  against the configured workspace root; absolute paths, `../` traversal,
+  and symlink/junction escapes are rejected; sizes and result counts are
+  bounded; writes are atomic; `delete_file` is HIGH-permission and requires
+  explicit approval. See SECURITY.md for the safety model.
 - **One mock tool** (`demo_tool`) used for the end-to-end tests.
 
 The **first end-to-end flow** is implemented and tested:
@@ -95,6 +107,8 @@ User Request → Agent → Planner → Tool Registry → Mock Tool → Result �
 │       │   ├── config.py        # Settings (env-based, no secrets)
 │       │   ├── demo_tools.py    # DemoTool (the demo tool)
 │       │   ├── builtin_tools/   # safe built-in tools (calc, datetime, text, json)
+│       │   ├── workspace.py     # workspace boundary + fail-closed path resolution
+│       │   ├── workspace_tools/ # nine scoped filesystem tools (Phase 3)
 │       │   ├── tool_runtime.py  # ToolRuntime (permission-gated execution)
 │       │   ├── errors.py        # exception hierarchy
 │       │   └── providers/
@@ -104,7 +118,8 @@ User Request → Agent → Planner → Tool Registry → Mock Tool → Result �
 │       │       ├── factory.py   # provider selection from Settings/env
 │       │       └── openai_provider.py  # OpenAI adapter (optional extra)
 │       └── tests/               # deterministic, offline test suite
-├── data/                        # runtime data (git-ignored, .gitkeep only)
+├── data/                        # runtime data (git-ignored)
+│   └── workspace/               # default workspace root for the file tools
 ├── .env.example                 # placeholder config (no secrets)
 ├── AGENTS.md                    # engineering rules
 ├── ARCHITECTURE.md              # the real, current architecture
@@ -183,7 +198,8 @@ pytest            # full test suite
 ## Not implemented yet (by design)
 
 A second real provider adapter (Anthropic, local models), streaming/
-embeddings, real tools with side effects, computer control, browser
-automation, voice, image/video generation, RAG, memory, presentation
-generation, and a user interface are all **future phases**. Adding them is
-explicitly gated in [ROADMAP.md](ROADMAP.md).
+embeddings, tools that leave the workspace boundary (web fetch/search,
+shell/command execution), computer control, browser automation, voice,
+image/video generation, RAG, memory, presentation generation, and a user
+interface are all **future phases**. Adding them is explicitly gated in
+[ROADMAP.md](ROADMAP.md).

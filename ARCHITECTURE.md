@@ -67,17 +67,19 @@ All implemented code lives in the single package
 | `tool_runtime.py` | `ToolRuntime`, `ToolInvocation` | The agent's only tool-execution path: requires an explicit ALLOWED permission decision (backstop), runs the registry's validate→run→validate pipeline, attaches execution metadata, emits tool lifecycle events. Provider-independent. | IMPLEMENTED |
 | `schema.py` | `validate_against_schema` | Minimal JSON-Schema (subset) validator: `type`, `properties`, `required`, `items`, `enum`. | IMPLEMENTED |
 | `permissions.py` | `PermissionLevel`, `PermissionPolicy`, `PermissionManager`, `ApprovalCallback` | Level-based policy decisions and fail-safe approval routing. | IMPLEMENTED |
-| `events.py` | `EventType`, `AgentEvent`, `EventBus`, `bounded_text` | Structured, in-memory event log + subscribers. Operational data only. | IMPLEMENTED |
+| `events.py` | `EventType`, `AgentEvent`, `EventBus`, `bounded_text`, `bounded_value` | Structured, in-memory event log + subscribers. Operational data only; `bounded_value` caps large tool I/O (e.g. file content) in event payloads. | IMPLEMENTED |
 | `providers/base.py` | `ModelProvider`, `ModelRequest`, `ModelResponse`, `Capability` | Vendor-neutral model interface. `stream`/`embed` are declared but raise until an adapter implements them. | IMPLEMENTED |
 | `providers/mock.py` | `MockModelProvider` | Deterministic in-memory provider (scripted or keyword mode). No network, no key. Default provider. | IMPLEMENTED |
 | `providers/gateway.py` | `ModelGateway` | `ModelProvider` decorator: normalizes provider errors, retries transient failures with bounded exponential backoff, passes structured responses through unchanged. Vendor-agnostic. | IMPLEMENTED |
 | `providers/factory.py` | `create_provider`, `build_gateway`, `SUPPORTED_PROVIDERS` | Configuration-driven provider selection (`MODEL_PROVIDER`) + gateway construction. The only place that knows provider names. | IMPLEMENTED |
 | `providers/openai_provider.py` | `OpenAIProvider` | Real Chat Completions adapter (optional `openai` extra, lazy SDK import). Env credentials, timeouts, sanitized error mapping. | IMPLEMENTED |
-| `config.py` | `Settings` | Env-based configuration (`AGENT_NAME`, `LOG_LEVEL`, `DATA_ROOT`, `MODEL_PROVIDER`, `MODEL_NAME`, `MODEL_TIMEOUT_S`, `MODEL_MAX_RETRIES`). No secrets. | IMPLEMENTED |
+| `config.py` | `Settings` | Env-based configuration (`AGENT_NAME`, `LOG_LEVEL`, `DATA_ROOT`, `MODEL_PROVIDER`, `MODEL_NAME`, `MODEL_TIMEOUT_S`, `MODEL_MAX_RETRIES`, `WORKSPACE_ROOT`, `WORKSPACE_MAX_*` limits). No secrets. | IMPLEMENTED |
 | `demo_tools.py` | `DemoTool` | The demo tool (`demo_tool`, LOW permission) used to prove the end-to-end flow. | IMPLEMENTED |
-| `builtin_tools/` | `CalculatorTool`, `DateTimeTool`, `TextUtilsTool`, `JsonUtilsTool`, `register_default_tools` | Safe, deterministic, side-effect-free built-in tools (all LOW permission, bounded input). Date/time is declared non-deterministic. No shell/filesystem/network. | IMPLEMENTED |
-| `errors.py` | `AgentCoreError` + subclasses | Single exception hierarchy so agent failures are catchable (incl. `PermissionDeniedError`, `ToolAlreadyRegisteredError`). | IMPLEMENTED |
-| `agent.py` | `Agent` | Facade that wires planner + registry + permissions + events + executor into `run(request)`. `create_demo`/`create_configured` register the default tool set. | IMPLEMENTED |
+| `builtin_tools/` | `CalculatorTool`, `DateTimeTool`, `TextUtilsTool`, `JsonUtilsTool`, `register_default_tools` | Safe, deterministic, side-effect-free built-in tools (all LOW permission, bounded input). Date/time is declared non-deterministic. No shell/network. | IMPLEMENTED |
+| `workspace.py` | `Workspace`, `WorkspaceError`, `WorkspaceLimits` | The workspace boundary: turns model-supplied (workspace-relative) paths into real filesystem paths with fail-closed resolution (no absolute paths, no `../` escape, no symlink/junction escape, no host-path leakage). | IMPLEMENTED |
+| `workspace_tools/` | `ListDirectoryTool`, `ReadTextFileTool`, `WriteTextFileTool`, `CreateDirectoryTool`, `CopyFileTool`, `MoveFileTool`, `DeleteFileTool`, `FileInfoTool`, `SearchFilesTool`, `register_workspace_tools` | Nine filesystem tools scoped to the workspace boundary (LOW/MEDIUM/HIGH permission, bounded sizes/results, structured error codes, atomic writes, no shell/subprocess). See SECURITY.md for the safety model. | IMPLEMENTED |
+| `errors.py` | `AgentCoreError` + subclasses | Single exception hierarchy so agent failures are catchable (incl. `PermissionDeniedError`, `ToolAlreadyRegisteredError`, `WorkspaceError`). | IMPLEMENTED |
+| `agent.py` | `Agent` | Facade that wires planner + registry + permissions + events + executor into `run(request)`. `create_demo`/`create_configured` register the default tool set **plus the Phase 3 workspace tools**. | IMPLEMENTED |
 
 Entry point: `apps/backend/src/main.py` (demo, mock provider by default, no API key).
 
@@ -125,6 +127,12 @@ ALLOWED permission decision — the runtime raises `PermissionDeniedError` for
 anything else (the executor only ever passes ALLOWED, so this is a
 defense-in-depth backstop). Input and output are schema-validated; tool
 exceptions are contained into a structured `ToolResult` (never a crash).
+
+Tool Runtime payload bounding (Phase 3): `TOOL_STARTED`/`TOOL_COMPLETED`
+carry the tool input/output through `bounded_value` — large values (e.g. a
+file's content) are truncated to an excerpt in the *event* so the model still
+receives the full result via the step output, but events/logs stay concise
+and never carry bulk file content or secrets.
 
 The happy path for the request `"Run the demo tool."` emits exactly:
 
@@ -198,10 +206,24 @@ Each decision lists the *why*, per the AGENTS.md rule to document decisions.
   runtime adds the permission precondition (explicit ALLOWED decision or
   `PermissionDeniedError`), execution metadata, and tool lifecycle events.
   No tool can be executed by the agent without passing both the permission
-  system and schema validation. Phase 2 tools are all LOW-permission,
+  system and schema validation. Phase 2 built-ins are all LOW-permission,
   deterministic (or declared non-deterministic), side-effect-free, and
-  bounded; forbidden capabilities (shell/subprocess/eval/network/filesystem)
-  are verified absent by static + behavioral tests.
+  bounded; forbidden capabilities (shell/subprocess/eval/network) are
+  verified absent by static + behavioral tests.
+- **D14 — Filesystem access is confined to an explicit workspace boundary.**
+  Phase 3 adds nine filesystem tools, but *no* unrestricted shell,
+  subprocess, or arbitrary code execution. Every path is resolved by
+  `Workspace.resolve()` against a configured root (`WORKSPACE_ROOT`) and the
+  **fully resolved** path must be the root or under it — so absolute paths,
+  `../` traversal, and symlinks/junctions/reparse-points that point outside
+  are all rejected (`path_outside_workspace`). There are no string-prefix
+  checks; containment is decided on the canonical path, and any case that
+  cannot be proven safe fails closed with a structured security error.
+  Permission levels (LOW read/list/info/search; MEDIUM write/create/copy/
+  move; HIGH delete) reuse the Phase 2 fail-safe approval mechanism, so a
+  denied operation never touches the filesystem. Writes are atomic and
+  bounded; events carry only relative paths + metadata, never host paths or
+  file contents. See SECURITY.md for the full model.
 
 ---
 
@@ -216,10 +238,11 @@ These are **NOT IMPLEMENTED** and must not be added prematurely
   implemented).
 - Native strict `json_schema` output mode (the openai adapter uses
   `json_object` mode; see decision D11).
-- Side-effecting tools: file tools (scoped to `DATA_ROOT`), web fetch/search,
-  shell, computer, browser. Phase 2's built-ins are intentionally
-  side-effect-free; the next tool phase adds scoped, permission-gated
-  side-effecting tools.
+- Side-effecting tools *beyond the workspace boundary*: web fetch/search,
+  shell/command execution, computer control, browser automation. Phase 3's
+  workspace file tools (scoped to `WORKSPACE_ROOT`, permission-gated, no
+  shell/subprocess) are IMPLEMENTED; any tool that leaves the workspace or
+  runs a process is a future phase and must be HIGH-permission.
 - Output verification beyond "all steps completed" (a richer `Verifier`).
 - Human-facing approval channel (CLI prompt / UI); a synchronous approval
   callback protocol exists and is fail-safe.

@@ -79,7 +79,7 @@ permission decision and schema-valid input.
 | Built-in tools: calculator, date/time, text utils, JSON utils (LOW, bounded) | IMPLEMENTED |
 | Tool spec compatibility metadata (`version`, `deterministic`) | IMPLEMENTED |
 | Safety-boundary tests (no shell/subprocess/eval/network in core source) | IMPLEMENTED |
-| Side-effecting tools: files (scoped to `DATA_ROOT`), web fetch/search | NOT IMPLEMENTED (deferred — next tool phase) |
+| Side-effecting file tools | IMPLEMENTED in Phase 3 (workspace-scoped); web fetch/search still NOT IMPLEMENTED |
 | Approval channel wired to a human (CLI prompt, then UI) | NOT IMPLEMENTED (synchronous callback exists) |
 | Output verification beyond "all steps done" | NOT IMPLEMENTED (later phase) |
 
@@ -90,9 +90,43 @@ absent by tests.
 
 ---
 
-## Phase 3 — Memory & RAG
+## Phase 3 — System & Workspace Tools ✅ IMPLEMENTED
 
-Persistent memory and retrieval over documents.
+A safe, provider-agnostic filesystem/workspace tool layer. The agent can
+work with files and directories, but **only inside an explicitly configured
+workspace boundary** (`WORKSPACE_ROOT`). There is **no** unrestricted shell,
+subprocess, PowerShell/cmd.exe, or arbitrary Python/DLL execution. See
+[SECURITY.md](SECURITY.md) §4 for the full safety model.
+
+| Item | Status |
+| --- | --- |
+| Workspace boundary (`Workspace.resolve`): resolved-path containment, no absolute/`../`/symlink/junction escape, fail-closed | IMPLEMENTED |
+| `list_directory` (LOW) — sorted, capped entries | IMPLEMENTED |
+| `read_text_file` (LOW) — explicit encoding, size cap, structured decode errors | IMPLEMENTED |
+| `write_text_file` (MEDIUM) — explicit overwrite, size cap, atomic write, no implicit mkdir | IMPLEMENTED |
+| `create_directory` (MEDIUM) — nested, idempotent, never the root | IMPLEMENTED |
+| `copy_file` (MEDIUM) — explicit overwrite, source size cap, atomic destination | IMPLEMENTED |
+| `move_file` (MEDIUM) — explicit overwrite, `os.replace` | IMPLEMENTED |
+| `delete_file` (HIGH) — files only, explicit approval, no recursive dir deletion | IMPLEMENTED |
+| `file_info` (LOW) — missing path is a structured `exists:false` | IMPLEMENTED |
+| `search_files` (LOW) — glob-style (no regex), result cap, no symlink following | IMPLEMENTED |
+| Configurable limits (read/write bytes, list/search counts, path length) via env | IMPLEMENTED |
+| Structured, stable error codes; no host-path or content leakage in errors/events | IMPLEMENTED |
+| Event payload bounding (`bounded_value`) so file content never floods events | IMPLEMENTED |
+| Comprehensive tests (normal ops, traversal, symlink escape, denial, limits, integration) | IMPLEMENTED |
+| **Not present (intentionally out of scope):** subprocess/shell, arbitrary code execution, any access outside the workspace, recursive directory deletion | NOT IMPLEMENTED (by design) |
+
+**Acceptance (met):** every filesystem action stays inside `WORKSPACE_ROOT`;
+escape attempts (absolute, `../`, symlink/junction) are rejected with a
+structured error; a denied operation never touches the filesystem; delete is
+HIGH + fail-safe approval; the default suite stays offline and deterministic.
+
+---
+
+## Phase 4 — Memory & RAG
+
+Persistent memory and retrieval over documents. (Originally the planned
+Phase 3; rescheduled after the workspace tools phase.)
 
 | Item | Status |
 | --- | --- |
@@ -102,7 +136,7 @@ Persistent memory and retrieval over documents.
 
 ---
 
-## Phase 4 — Document & presentation generation
+## Phase 5 — Document & presentation generation
 
 | Item | Status |
 | --- | --- |
@@ -122,7 +156,7 @@ Persistent memory and retrieval over documents.
 
 ---
 
-## Phase 6 — Voice
+## Phase 7 — Voice
 
 | Item | Status |
 | --- | --- |
@@ -144,7 +178,7 @@ Persistent memory and retrieval over documents.
 
 ---
 
-## Phase 8 — Media generation
+## Phase 9 — Media generation
 
 | Item | Status |
 | --- | --- |
@@ -154,7 +188,7 @@ Persistent memory and retrieval over documents.
 
 ---
 
-## Phase 9 — UI, API, and the Task Manager layer
+## Phase 10 — UI, API, and the Task Manager layer
 
 The user-facing shell and durable task management.
 

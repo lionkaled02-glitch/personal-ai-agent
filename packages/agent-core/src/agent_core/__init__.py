@@ -15,9 +15,17 @@ metadata-carrying tool execution with structured lifecycle events) and a set
 of safe, deterministic built-in tools (calculator, date/time, text utils,
 JSON utils).
 
-Everything else (real side-effect tools, UI, browser/computer control, voice,
-media generation, RAG/memory) is PLANNED — see ARCHITECTURE.md and
-ROADMAP.md at the repository root for what exists and what does not.
+Phase 3 (IMPLEMENTED): a safe, provider-agnostic filesystem/workspace tool
+layer. Nine tools (list_directory, read_text_file, write_text_file,
+create_directory, copy_file, move_file, delete_file, file_info,
+search_files) operate strictly inside an explicitly configured workspace
+boundary enforced by :class:`agent_core.workspace.Workspace`. There is still
+NO unrestricted shell/subprocess or arbitrary code execution.
+
+Everything else (real side-effect tools beyond the workspace boundary, UI,
+browser/computer control, voice, media generation, RAG/memory) is PLANNED —
+see ARCHITECTURE.md and ROADMAP.md at the repository root for what exists and
+what does not.
 """
 
 from .agent import Agent
@@ -43,7 +51,7 @@ from .errors import (
     ToolNotFoundError,
     TransientProviderError,
 )
-from .events import AgentEvent, EventBus, EventType, bounded_text, utc_now
+from .events import AgentEvent, EventBus, EventType, bounded_text, bounded_value, utc_now
 from .executor import BasicVerifier, Executor, Verifier, VerifyResult
 from .permissions import (
     ApprovalCallback,
@@ -72,8 +80,21 @@ from .schema import validate_against_schema
 from .tasks import StepStatus, Task, TaskState, TaskStep
 from .tool_runtime import ToolInvocation, ToolRuntime
 from .tools import Tool, ToolRegistry, ToolResult, ToolSpec
+from .workspace import Workspace, WorkspaceError, WorkspaceLimits
+from .workspace_tools import (
+    CopyFileTool,
+    CreateDirectoryTool,
+    DeleteFileTool,
+    FileInfoTool,
+    ListDirectoryTool,
+    MoveFileTool,
+    ReadTextFileTool,
+    SearchFilesTool,
+    WriteTextFileTool,
+    register_workspace_tools,
+)
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "DEMO_TOOL_NAME",
@@ -87,18 +108,24 @@ __all__ = [
     "CalculatorTool",
     "Capability",
     "ChatMessage",
+    "CopyFileTool",
+    "CreateDirectoryTool",
     "DateTimeTool",
+    "DeleteFileTool",
     "DemoTool",
     "EventBus",
     "EventType",
     "Executor",
+    "FileInfoTool",
     "JsonUtilsTool",
+    "ListDirectoryTool",
     "MockModelProvider",
     "ModelGateway",
     "ModelPlanner",
     "ModelProvider",
     "ModelRequest",
     "ModelResponse",
+    "MoveFileTool",
     "OpenAIProvider",
     "PermissionDecision",
     "PermissionDeniedError",
@@ -111,6 +138,8 @@ __all__ = [
     "PlanningError",
     "ProviderConfigurationError",
     "ProviderError",
+    "ReadTextFileTool",
+    "SearchFilesTool",
     "Settings",
     "StepStatus",
     "Task",
@@ -132,11 +161,17 @@ __all__ = [
     "TransientProviderError",
     "Verifier",
     "VerifyResult",
+    "Workspace",
+    "WorkspaceError",
+    "WorkspaceLimits",
+    "WriteTextFileTool",
     "bounded_text",
+    "bounded_value",
     "build_gateway",
     "create_provider",
     "plan_json_schema",
     "register_default_tools",
+    "register_workspace_tools",
     "utc_now",
     "validate_against_schema",
 ]

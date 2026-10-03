@@ -13,6 +13,7 @@ is synchronous by design for Phase 0 (see ARCHITECTURE.md, decision D7).
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 
 from .builtin_tools import register_default_tools
 from .config import Settings
@@ -26,6 +27,8 @@ from .providers.gateway import ModelGateway
 from .providers.mock import MockModelProvider
 from .tasks import Task, TaskState, TaskStep
 from .tools import ToolRegistry
+from .workspace import Workspace
+from .workspace_tools import register_workspace_tools
 
 
 class Agent:
@@ -59,15 +62,20 @@ class Agent:
         cls,
         approval: ApprovalCallback | None = None,
         clock: Clock | None = None,
+        workspace_root: Path | None = None,
     ) -> Agent:
         """A fully wired agent using only in-process fakes.
 
-        No API keys, no network, no external state — used by the demo entry
-        point (apps/backend/src/main.py) and by integration tests. Registers
-        the default tool set (demo tool + Phase 2 safe built-ins).
+        No API keys, no network — used by the demo entry point
+        (apps/backend/src/main.py) and by integration tests. Registers the
+        default tool set (demo tool + Phase 2 safe built-ins) plus the Phase 3
+        workspace tools bound to the workspace root (default
+        ``data/workspace``). Filesystem tools only act inside that boundary.
         """
         registry = ToolRegistry()
         register_default_tools(registry)
+        root = workspace_root if workspace_root is not None else Settings().workspace_root
+        register_workspace_tools(registry, Workspace(root))
         provider = MockModelProvider()
         return cls(
             planner=ModelPlanner(provider),
@@ -95,13 +103,15 @@ class Agent:
 
         Pass a pre-built ``gateway`` to reuse/inspect one (e.g. to log the
         active provider name); otherwise it is built from ``settings``.
-        Registers the default tool set (demo tool + Phase 2 safe built-ins).
+        Registers the default tool set (demo tool + Phase 2 safe built-ins)
+        plus the Phase 3 workspace tools bound to ``settings.workspace_root``.
         """
         resolved = settings if settings is not None else Settings.from_env()
         if gateway is None:
             gateway = build_gateway(resolved)
         registry = ToolRegistry()
         register_default_tools(registry)
+        register_workspace_tools(registry, Workspace.from_settings(resolved))
         return cls(
             planner=ModelPlanner(gateway),
             registry=registry,
