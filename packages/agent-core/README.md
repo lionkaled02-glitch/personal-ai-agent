@@ -110,17 +110,18 @@ and the **memory & RAG foundation** (Phase 5):
   is untrusted data, never instructions. This is not unrestricted autonomous
   browsing, CAPTCHA/anti-bot bypass, credential harvesting, arbitrary
   JavaScript, or profile reuse.
-- **Coding Agent core foundation (Phase 10, Steps 1–2)** — `agent_core.coding`
-  provides strict bounded project/file/region, analysis, structural patch,
-  test-plan, and metadata-only observation models; a provider-neutral
+- **Coding Agent core foundation (Phase 10, Steps 1–3)** — `agent_core.coding`
+  provides strict bounded project/file/region, analysis, diagnostic, structural
+  patch, test-plan, and metadata-only observation models; a provider-neutral
   `CodingProvider`; `CODING_*` limits; content-safe errors; and an offline
-  deterministic mock. `CodingAnalysisRuntime` adds bounded, read-only project
-  discovery through the existing `Workspace`: Python is parsed to an AST
-  without execution, JavaScript/TypeScript receive a shallow line scan, and
-  JSON/TOML/Markdown/YAML produce metadata only. Skipped files and truncation
-  reasons are explicit, and the runtime uses the existing LOW analysis
-  permission convention. Repository/config/source text remains untrusted data.
-  No patch is applied; Step 2 adds no shell/process, compiler/build/test
+  deterministic mock. `CodingAnalysisRuntime` performs bounded read-only
+  discovery through `Workspace`; `CodeDiagnosticsEngine` adds fixed, bounded
+  Python, JavaScript, and TypeScript syntax/style findings from the validated
+  snapshots. Python uses AST parsing without execution; JavaScript/TypeScript
+  diagnostics are shallow and rule-based; JSON/TOML/Markdown/YAML remain
+  metadata-only. Findings carry stable code/category, severity, path, and
+  optional line/column. Repository/config/source text remains untrusted data.
+  No patch is applied; Steps 2–3 add no shell/process, compiler/build/test
   execution, package installation, arbitrary code execution, automatic writes,
   network requests, or real-provider integration.
 

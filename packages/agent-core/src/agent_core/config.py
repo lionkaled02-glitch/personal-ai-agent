@@ -81,8 +81,8 @@ Variables:
 Voice time limits are cooperative because synchronous provider calls cannot
 be forcibly interrupted. Phase 8 adds no microphone hardware, API keys, or
 external STT/TTS provider. Phase 10 adds bounded coding data contracts, a
-local mock, and read-only local analysis; it adds no source writes, command
-execution, or real provider.
+local mock, read-only analysis, and deterministic diagnostics; it adds no
+source writes, command execution, or real provider.
 
 ``DATA_ROOT`` holds logs and task artifacts; it is independent of the
 workspace boundary, which the Phase 3 filesystem tools enforce strictly.
@@ -184,7 +184,7 @@ class Settings(BaseModel):
     browser_max_action_time_s: float = 5.0
     browser_max_wait_time_s: float = 5.0
     browser_max_retries: int = 1
-    # Coding Agent foundation (Phase 10, Steps 1-2) — data/plan/analysis bounds.
+    # Coding Agent foundation (Phase 10, Steps 1-3) — data/plan/analysis/diagnostic bounds.
     coding_max_project_files: int = 100
     coding_max_file_size_bytes: int = 524_288
     coding_max_source_chars: int = 500_000

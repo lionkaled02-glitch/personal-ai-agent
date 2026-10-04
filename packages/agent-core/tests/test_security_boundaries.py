@@ -16,9 +16,10 @@ Two complementary guards:
    secret-like content atomically; expired memories are excluded; nothing is
    auto-persisted from conversation; memory operations respect the
    permission system.
-4. **Coding foundation (Phase 10, Steps 1-2)**: the coding package is offline
-   data/proposal planning plus bounded read-only analysis through `Workspace`;
-   it has no write, command, network, compiler, or test-execution capability.
+4. **Coding foundation (Phase 10, Steps 1-3)**: the coding package is offline
+   data/proposal planning, bounded read-only `Workspace` analysis, and
+   deterministic in-memory diagnostics; it has no write, command, network,
+   compiler, or test-execution capability.
 
 These tests run fully offline.
 """
@@ -223,7 +224,7 @@ class TestStaticSourceBoundaries:
         assert offenders == [], f"unsafe computer dependency boundary: {offenders}"
 
     def test_coding_layer_is_offline_data_only_and_has_no_write_or_execution_api(self) -> None:
-        """Phase 10 Step 2 permits only bounded read-only Workspace snapshots."""
+        """Phase 10 permits bounded Workspace snapshots and in-memory diagnostics only."""
         import sys
 
         coding_root = SRC / "coding"
