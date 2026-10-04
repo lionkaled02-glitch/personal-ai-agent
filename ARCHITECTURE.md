@@ -51,8 +51,8 @@ control are not.
 
 The implemented portion is the middle band: **Orchestrator → Planner →
 Model Gateway → Provider → Tool Registry → Permission**, plus the opt-in
-Phase 6 computer runtime and the events backbone that runs alongside all of
-it.
+Phase 6 computer runtime, the Phase 7 visual layer over its screenshot path,
+and the events backbone that runs alongside all of it.
 
 ---
 
@@ -70,13 +70,13 @@ All implemented code lives in the single package
 | `tool_runtime.py` | `ToolRuntime`, `ToolInvocation` | The agent's only tool-execution path: requires an explicit ALLOWED permission decision (backstop), runs the registry's validate→run→validate pipeline, attaches execution metadata, emits tool lifecycle events, and redacts sensitive computer tool inputs/outputs from events. Provider-independent. | IMPLEMENTED |
 | `schema.py` | `validate_against_schema` | Minimal JSON-Schema (subset) validator: `type`, `properties`, `required`, `items`, `enum`. | IMPLEMENTED |
 | `permissions.py` | `PermissionLevel`, `PermissionPolicy`, `PermissionManager`, `ApprovalCallback` | Level-based policy decisions and fail-safe approval routing; a private, exact-tool authorization scope lets explicitly registered computer tools reuse the executor's existing approval without widening privileges. | IMPLEMENTED |
-| `events.py` | `EventType`, `AgentEvent`, `EventBus`, `bounded_text`, `bounded_value` | Structured, in-memory event log + subscribers. Operational data only; `bounded_value` caps large tool I/O, computer outputs and typed-text inputs are redacted, and computer lifecycle events carry bounded status/metadata. | IMPLEMENTED |
+| `events.py` | `EventType`, `AgentEvent`, `EventBus`, `bounded_text`, `bounded_value` | Structured, in-memory event log + subscribers. Operational data only; `bounded_value` caps large tool I/O, computer outputs and typed-text inputs are redacted, computer lifecycle events carry bounded status/metadata, and vision events never carry screenshot bytes or labels. | IMPLEMENTED |
 | `providers/base.py` | `ModelProvider`, `ModelRequest`, `ModelResponse`, `Capability` | Vendor-neutral model interface. `stream`/`embed` are declared but raise until an adapter implements them. | IMPLEMENTED |
 | `providers/mock.py` | `MockModelProvider` | Deterministic in-memory provider (scripted or keyword mode). No network, no key. Default provider. | IMPLEMENTED |
 | `providers/gateway.py` | `ModelGateway` | `ModelProvider` decorator: normalizes provider errors, retries transient failures with bounded exponential backoff, passes structured responses through unchanged. Vendor-agnostic. | IMPLEMENTED |
 | `providers/factory.py` | `create_provider`, `build_gateway`, `SUPPORTED_PROVIDERS` | Configuration-driven provider selection (`MODEL_PROVIDER`) + gateway construction. The only place that knows provider names. | IMPLEMENTED |
 | `providers/openai_provider.py` | `OpenAIProvider` | Real Chat Completions adapter (optional `openai` extra, lazy SDK import). Env credentials, timeouts, sanitized error mapping. | IMPLEMENTED |
-| `config.py` | `Settings` | Env-based configuration (`AGENT_NAME`, `LOG_LEVEL`, `DATA_ROOT`, `MODEL_PROVIDER`, `MODEL_NAME`, `MODEL_TIMEOUT_S`, `MODEL_MAX_RETRIES`, `WORKSPACE_ROOT`, `WORKSPACE_MAX_*` limits, `DOCUMENT_MAX_*` / `DOCUMENT_CHUNK_*` limits, `MEMORY_*` limits/TTLs, `COMPUTER_*` limits). No secrets. | IMPLEMENTED |
+| `config.py` | `Settings` | Env-based configuration (`AGENT_NAME`, `LOG_LEVEL`, `DATA_ROOT`, `MODEL_PROVIDER`, `MODEL_NAME`, `MODEL_TIMEOUT_S`, `MODEL_MAX_RETRIES`, `WORKSPACE_ROOT`, `WORKSPACE_MAX_*` limits, `DOCUMENT_MAX_*` / `DOCUMENT_CHUNK_*` limits, `MEMORY_*` limits/TTLs, `COMPUTER_*` and `VISION_*` limits). No secrets. | IMPLEMENTED |
 | `demo_tools.py` | `DemoTool` | The demo tool (`demo_tool`, LOW permission) used to prove the end-to-end flow. | IMPLEMENTED |
 | `builtin_tools/` | `CalculatorTool`, `DateTimeTool`, `TextUtilsTool`, `JsonUtilsTool`, `register_default_tools` | Safe, deterministic, side-effect-free built-in tools (all LOW permission, bounded input). Date/time is declared non-deterministic. No shell/network. | IMPLEMENTED |
 | `workspace.py` | `Workspace`, `WorkspaceError`, `WorkspaceLimits` | The workspace boundary: turns model-supplied (workspace-relative) paths into real filesystem paths with fail-closed resolution (no absolute paths, no `../` escape, no symlink/junction escape, no host-path leakage). | IMPLEMENTED |
@@ -101,7 +101,10 @@ All implemented code lives in the single package
 | `computer/runtime.py`, `computer/verification.py`, `computer/recovery.py` | `ComputerRuntime`, `VerificationCondition`, `RecoveryPolicy` | Existing permission-system integration around observation → authorization → action → fresh observation → deterministic verification; structured results/events, bounded safe retries and cooperative timeouts. No action is assumed successful without verification. | IMPLEMENTED |
 | `computer/windows.py` | `WindowsComputerProvider` | Optional Windows UI Automation adapter; `pywinauto`, `pywin32`, and Pillow load only when explicitly constructed on Windows. Non-Windows use raises `UnsupportedPlatformError`; missing extras raise `ProviderUnavailableError`. | IMPLEMENTED |
 | `computer_tools/` | 6 observation + 8 explicit action tools | Opt-in tools with declared schemas and LOW observation / MEDIUM interaction levels. No generic arbitrary-action tool. | IMPLEMENTED |
-| `agent.py` | `Agent` | Facade that wires planner + registry + permissions + events + executor (+ knowledge store + memory store + context builder) into `run(request)`. `create_demo`/`create_configured` register the default tool set plus Phases 3–5 tools. Phase 6 tools are registered only when `create_configured(computer_provider=...)` receives an explicit provider; limits come from `COMPUTER_*`. No provider is auto-created. | IMPLEMENTED |
+| `vision/models.py`, `vision/limits.py` | `ImageFrame`, `VisualObservation`, `VisualMatch`, `VisualVerificationCondition`, `VisualVerificationResult`, `VisionLimits` | Strict bounded visual data models; image frames are ephemeral and byte fields are excluded from repr/serialization. | IMPLEMENTED |
+| `vision/runtime.py`, `vision/comparison.py` | `VisionRuntime`, `DeterministicVisionProvider`, `VisionProvider`, `VisualVerifier` | Reuses Phase 6 screenshots for metadata-only analysis and bounded deterministic RGB comparison; no OCR, semantic model, network, upload, or acquisition path. Pillow is lazy/optional. | IMPLEMENTED |
+| `vision/tools.py`, `computer_tools/` | `vision_analyze_screenshot`, visual action conditions | LOW-permission analysis tool registered only alongside an explicit computer provider; structured action conditions use Phase 6 permissions and recovery. | IMPLEMENTED |
+| `agent.py` | `Agent` | Facade that wires planner + registry + permissions + events + executor (+ knowledge store + memory store + context builder) into `run(request)`. `create_demo`/`create_configured` register Phases 3–5 tools; Phase 6 computer and Phase 7 visual tools are registered only when `create_configured(computer_provider=...)` receives an explicit provider. Limits come from `COMPUTER_*`/`VISION_*`; no computer provider is auto-created. | IMPLEMENTED |
 
 Entry point: `apps/backend/src/main.py` (demo, mock provider by default, no API key).
 
@@ -348,6 +351,7 @@ Each decision lists the *why*, per the AGENTS.md rule to document decisions.
   in-memory, and omitted from action history and events. The Windows extra
   is optional and lazily imported; non-Windows behavior is a structured
   `unsupported_platform` result, not a failed import.
+- **D21 — Visual observation reuses ephemeral Phase 6 screenshots and is pixel-only.** Phase 7 adds a provider-neutral `VisionProvider`/`VisualVerifier` seam, an offline deterministic implementation, strict Pydantic observation/match/condition/result models, and a LOW `vision_analyze_screenshot` tool only when a `ComputerProvider` was explicitly supplied. `VisionRuntime` consumes a `ScreenshotObservation` already obtained via `ComputerRuntime`; it is not a second acquisition path. Image bytes exist only in the in-process `ImageFrame`/call stack, are excluded from representation and serialization, and are absent from visual observations, visual results, action history, and events. The optional `vision-image` extra lazily imports Pillow only for non-identical local RGB comparison; there is no vision SDK/API, cloud upload, OCR, or semantic model. Pixel predicates have explicit `VERIFIED`/`FAILED`/`UNCERTAIN` states and prove only pixel-level facts. A visual result alone (including screenshot change) can never mark a computer action successful; action success still requires a non-screenshot Phase 6 postcondition, and a requested visual condition must also be verified. Uncertainty may trigger only bounded screenshot/verification refreshes, never a blind action replay. Time ceilings are cooperative checks after synchronous provider/decoder calls, not forcible interruption. Screenshot-visible content and any provider labels/summaries are untrusted data, never instructions.
 
 ---
 
@@ -363,15 +367,17 @@ These are **NOT IMPLEMENTED** and must not be added prematurely
 - Native strict `json_schema` output mode (the openai adapter uses
   `json_object` mode; see decision D11).
 - Side-effecting tools *beyond the workspace boundary*: web fetch/search,
-  browser automation, and unrestricted computer control remain
-  NOT IMPLEMENTED. Phase 3's filesystem tools are scoped to `WORKSPACE_ROOT`;
-  Phase 6 adds only the explicit, bounded Windows computer foundation
-  described in D20. There is no shell, process launch, arbitrary code
-  execution, remote desktop, or generic computer action tool.
+  browser automation, semantic vision/OCR, remote vision APIs/cloud upload,
+  and unrestricted computer control remain NOT IMPLEMENTED. Phase 3's
+  filesystem tools are scoped to `WORKSPACE_ROOT`; Phase 6 adds only the
+  explicit bounded computer foundation in D20, and Phase 7 adds only local
+  pixel-level verification in D21. There is no shell, process launch,
+  arbitrary code execution, remote desktop, screenshot persistence, or generic
+  computer action tool.
 - Output verification beyond "all steps completed" (a richer `Verifier`).
 - Human-facing approval channel (CLI prompt / UI); a synchronous approval
   callback protocol exists and is fail-safe.
-- Browser automation and voice I/O.
+- Browser automation (Phase 8), voice I/O (Phase 9), semantic vision models, OCR, and remote vision APIs/cloud image upload.
 - Image/video generation and presentation/document *generation*. (Reading &
   analyzing existing documents — TXT/MD/PDF/DOCX/PPTX/XLSX — is IMPLEMENTED
   in Phase 4; producing new documents is not.)

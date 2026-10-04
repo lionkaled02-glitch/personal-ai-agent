@@ -266,7 +266,7 @@ arbitrary-action interface.
 | Optional `computer-windows` extra: lazily loaded Windows UI Automation provider; import-safe elsewhere and explicit `unsupported_platform` behavior | IMPLEMENTED |
 | Agent integration is opt-in: tools are registered only when an explicit provider is passed to `Agent.create_configured(computer_provider=...)` | IMPLEMENTED |
 | Deterministic fake-provider tests cover tools, permission/approval, bounds, verification, redaction, retry/timeouts, settings, and unsupported platforms | IMPLEMENTED |
-| Browser/Playwright, vision-LLM, voice, remote desktop, shell/PowerShell, arbitrary code/actions, clipboard, destructive actions, and automatic actions | NOT IMPLEMENTED (out of scope) |
+| Browser/Playwright, semantic vision models/OCR, remote vision APIs/cloud upload, voice, remote desktop, shell/PowerShell, arbitrary code/actions, clipboard, and surveillance | NOT IMPLEMENTED (out of scope) |
 
 **Acceptance:** deterministic tests use an in-memory fake provider (no Windows
 desktop required); the shared permission manager is enforced even for direct
@@ -292,17 +292,50 @@ and unscheduled; document *analysis* is implemented in Phase 4.
 
 ---
 
-## Phase 7 — Browser automation
+## Phase 7 — Vision & Visual Verification ✅ IMPLEMENTED
+
+A provider-neutral layer over the Phase 6 screenshot path. It analyzes and
+compares only fresh, bounded screenshots already acquired by
+`ComputerRuntime`; it does not add another capture mechanism or infer
+semantic meaning from pixels.
+
+| Item | Status |
+| --- | --- |
+| Strict `ImageSize`, `BoundingBox`, ephemeral `ImageFrame`, `VisualObservation`, `VisualMatch`, and `VisualVerification*` Pydantic models | IMPLEMENTED |
+| Existing Phase 6 `ComputerRuntime.screenshot()` acquisition reused; no screen recording, history, or automatic storage | IMPLEMENTED |
+| Offline deterministic provider: metadata-only observation plus bounded exact RGB/pixel comparison; no object recognition or OCR | IMPLEMENTED |
+| Optional local `vision-image` extra for Pillow; lazy import and no external vision SDK/API | IMPLEMENTED |
+| Explicit `VERIFIED` / `FAILED` / `UNCERTAIN` visual verdicts; stable sanitized error codes and provider-output revalidation | IMPLEMENTED |
+| `vision_analyze_screenshot` (LOW, only registered with an explicit computer provider); raw screenshot bytes are never returned by this tool | IMPLEMENTED |
+| Optional schema-validated visual conditions on named Phase 6 action tools; uses the same permission manager and before/after action lifecycle | IMPLEMENTED |
+| Pixel changes never establish semantic action success by themselves; a non-screenshot Phase 6 postcondition is still required for action success | IMPLEMENTED |
+| Uncertainty permits only a bounded screenshot/verification refresh; it never replays the action, and HIGH-risk operations remain non-retryable | IMPLEMENTED |
+| `VISION_*` bounds for image bytes/dimensions/pixels, regions, labels, summaries, comparison work, cooperative elapsed-time checks, and refresh retries | IMPLEMENTED |
+| Visual events contain operational metadata only; labels and summaries are marked untrusted; screenshot bytes never enter events/results/history | IMPLEMENTED |
+| Platform-independent synthetic PNG tests, permission/recovery integration tests, and static dependency-boundary tests | IMPLEMENTED |
+| Semantic vision models, OCR (including credential discovery), remote APIs/cloud upload, persistent screenshot storage, and surveillance | NOT IMPLEMENTED (out of scope) |
+
+**Acceptance (met):** screenshot acquisition remains in Phase 6; the default
+provider is offline and deterministic; malformed or over-limit images fail
+closed; comparisons are pixel evidence only; uncertainty is never success;
+a visual condition without a separate deterministic action postcondition
+cannot mark a computer action successful; uncertainty refreshes are bounded
+and do not repeat mouse/keyboard input; no screenshot bytes enter events or
+persistent models.
+
+---
+
+## Phase 8 — Browser automation
 
 | Item | Status |
 | --- | --- |
 | Browser provider (e.g. Playwright) behind a tool/agent boundary | NOT IMPLEMENTED |
 | HIGH-permission + approval for navigations/actions | NOT IMPLEMENTED |
-| Screenshots/DOM as tool outputs | NOT IMPLEMENTED |
+| DOM/page content as untrusted tool output | NOT IMPLEMENTED |
 
 ---
 
-## Phase 8 — Voice
+## Phase 9 — Voice
 
 | Item | Status |
 | --- | --- |
@@ -311,27 +344,28 @@ and unscheduled; document *analysis* is implemented in Phase 4.
 
 ---
 
-## Phase 9 — Extended Computer Workflows (future)
+## Phase 10 — Extended Computer Workflows (future)
 
-Phase 6 provides only a conservative desktop foundation with named,
-bounded operations. Future work, if separately approved, must extend that
-surface with explicit tools and retain the same least-privilege, verification,
-and privacy guarantees; Phase 9 is not permission to add generic control.
+Phase 6 and Phase 7 provide a conservative desktop foundation and pixel-level
+verification only. Future work, if separately approved, must extend that
+surface with explicit tools and retain the same least-privilege, semantic
+postcondition, and privacy guarantees; Phase 10 is not permission to add
+generic control.
 
 | Item | Status |
 | --- | --- |
 | Manual Windows compatibility/accessibility validation matrix | PLANNED |
 | Additional narrowly scoped, named workflows with risk review and deterministic postconditions | NOT IMPLEMENTED |
 | Any destructive or externally consequential computer operation (HIGH + explicit approval) | NOT IMPLEMENTED |
-| Persistent, redaction-aware audit trail (Phase 11 task/event persistence) | NOT IMPLEMENTED |
-| Browser automation, remote desktop/network control, shell/PowerShell, arbitrary code/actions | NOT IMPLEMENTED (excluded by current safety scope) |
+| Persistent, redaction-aware audit trail (Phase 12 task/event persistence) | NOT IMPLEMENTED |
+| Remote desktop/network control, shell/PowerShell, arbitrary code/actions | NOT IMPLEMENTED (excluded by current safety scope) |
 
 No earlier phase grants shell access or unrestricted OS control. The Phase 6
 adapter never launches processes and exposes no generic arbitrary-action tool.
 
 ---
 
-## Phase 10 — Media generation
+## Phase 11 — Media generation
 
 | Item | Status |
 | --- | --- |
@@ -341,7 +375,7 @@ adapter never launches processes and exposes no generic arbitrary-action tool.
 
 ---
 
-## Phase 11 — UI, API, and the Task Manager layer
+## Phase 12 — UI, API, and the Task Manager layer
 
 The user-facing shell and durable task management.
 
@@ -358,6 +392,7 @@ The user-facing shell and durable task management.
 
 The core is proven first (Phase 0) so every later capability is a *pluggable
 extension* (new tool, new provider, new agent) rather than a rewrite. The
-bounded Phase 6 computer foundation follows the exercised permission,
-approval, and verification layers; broader browser/computer workflows remain
-separate, higher-risk work and are not enabled by this phase.
+bounded Phase 6 computer foundation follows the exercised permission, approval,
+and verification layers; Phase 7 reuses its ephemeral screenshot path for
+local pixel-level observation. Semantic vision and broader browser/computer
+workflows remain separate and are not enabled by this phase.

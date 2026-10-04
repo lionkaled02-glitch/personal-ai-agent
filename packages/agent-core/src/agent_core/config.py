@@ -58,6 +58,14 @@ Variables:
 - ``COMPUTER_MAX_RETRIES`` (int, default ``1``)
 - ``COMPUTER_MOUSE_MOVE_DURATION_S`` (float, default ``0.5``)
 - ``COMPUTER_CURSOR_TOLERANCE_PX`` (int, default ``2``)
+- ``VISION_MAX_IMAGE_BYTES`` / ``VISION_MAX_IMAGE_WIDTH`` /
+  ``VISION_MAX_IMAGE_HEIGHT`` / ``VISION_MAX_IMAGE_PIXELS`` (int; screenshot
+  and decode limits, Phase 7)
+- ``VISION_MAX_REGIONS`` / ``VISION_MAX_LABEL_CHARS`` /
+  ``VISION_MAX_SUMMARY_CHARS`` (int; provider output bounds)
+- ``VISION_MAX_COMPARISON_PIXELS`` (int; deterministic pixel-work cap)
+- ``VISION_MAX_OBSERVATION_RETRIES`` (int; screenshot-only uncertainty refreshes)
+- ``VISION_MAX_OPERATION_SECONDS`` (float; cooperative elapsed-time limit)
 
 ``DATA_ROOT`` holds logs and task artifacts; it is independent of the
 workspace boundary, which the Phase 3 filesystem tools enforce strictly.
@@ -121,6 +129,17 @@ class Settings(BaseModel):
     computer_max_retries: int = 1
     computer_mouse_move_duration_s: float = 0.5
     computer_cursor_tolerance_px: int = 2
+    # Vision & visual verification (Phase 7) — local processing bounds only.
+    vision_max_image_bytes: int = 1_048_576
+    vision_max_image_width: int = 4_096
+    vision_max_image_height: int = 4_096
+    vision_max_image_pixels: int = 16_777_216
+    vision_max_regions: int = 100
+    vision_max_label_chars: int = 128
+    vision_max_summary_chars: int = 512
+    vision_max_comparison_pixels: int = 1_048_576
+    vision_max_observation_retries: int = 1
+    vision_max_operation_seconds: float = 5.0
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Settings:
@@ -232,6 +251,36 @@ class Settings(BaseModel):
             ),
             computer_cursor_tolerance_px=int(
                 source.get("COMPUTER_CURSOR_TOLERANCE_PX", defaults.computer_cursor_tolerance_px)
+            ),
+            vision_max_image_bytes=int(
+                source.get("VISION_MAX_IMAGE_BYTES", defaults.vision_max_image_bytes)
+            ),
+            vision_max_image_width=int(
+                source.get("VISION_MAX_IMAGE_WIDTH", defaults.vision_max_image_width)
+            ),
+            vision_max_image_height=int(
+                source.get("VISION_MAX_IMAGE_HEIGHT", defaults.vision_max_image_height)
+            ),
+            vision_max_image_pixels=int(
+                source.get("VISION_MAX_IMAGE_PIXELS", defaults.vision_max_image_pixels)
+            ),
+            vision_max_regions=int(source.get("VISION_MAX_REGIONS", defaults.vision_max_regions)),
+            vision_max_label_chars=int(
+                source.get("VISION_MAX_LABEL_CHARS", defaults.vision_max_label_chars)
+            ),
+            vision_max_summary_chars=int(
+                source.get("VISION_MAX_SUMMARY_CHARS", defaults.vision_max_summary_chars)
+            ),
+            vision_max_comparison_pixels=int(
+                source.get("VISION_MAX_COMPARISON_PIXELS", defaults.vision_max_comparison_pixels)
+            ),
+            vision_max_observation_retries=int(
+                source.get(
+                    "VISION_MAX_OBSERVATION_RETRIES", defaults.vision_max_observation_retries
+                )
+            ),
+            vision_max_operation_seconds=float(
+                source.get("VISION_MAX_OPERATION_SECONDS", defaults.vision_max_operation_seconds)
             ),
         )
 

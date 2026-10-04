@@ -18,6 +18,14 @@ from ..permissions import (
     _active_permission_authorization,
     _permission_authorization_scope,
 )
+from ..vision.errors import VisionError
+from ..vision.interfaces import VisualVerifier
+from ..vision.models import (
+    VisualVerificationCondition,
+    VisualVerificationResult,
+    VisualVerificationStatus,
+)
+from ..vision.verification import verify_visual_match
 from .errors import ComputerError, ComputerProviderError, ComputerValidationError
 from .interfaces import ComputerProvider
 from .limits import ComputerLimits
@@ -54,6 +62,79 @@ from .observation import (
 )
 from .recovery import RecoveryPolicy
 from .verification import not_run, verify_condition
+
+_SAFE_VISUAL_REASONS = frozenset(
+    {
+        "visual_verification_not_run",
+        "visual_verifier_unavailable",
+        "visual_preflight_failed",
+        "visual_region_out_of_bounds",
+        "visual_screenshot_unavailable",
+        "visual_refresh_failed",
+        "visual_refresh_screenshot_unavailable",
+        "visual_verification_failed",
+        "pre_action_screenshot_unavailable",
+        "visual_condition_mismatch",
+        "invalid_visual_result",
+        "visual_evidence_uncertain",
+        "visual_result_inconsistent",
+        "visual_provider_failed",
+        "invalid_image",
+        "image_limit_exceeded",
+        "invalid_region",
+        "comparison_limit_exceeded",
+        "optional_image_support_unavailable",
+        "vision_operation_timeout",
+        "vision_provider_unavailable",
+        "vision_comparison_failed",
+    }
+)
+_VISION_ERROR_MESSAGES = {
+    "invalid_image": (
+        "invalid_image",
+        "Screenshot data is not a supported bounded PNG image.",
+    ),
+    "screenshot_payload_missing": (
+        "invalid_image",
+        "Screenshot data is not available for visual verification.",
+    ),
+    "screenshot_dimension_mismatch": (
+        "invalid_image",
+        "Screenshot dimensions do not match its PNG header.",
+    ),
+    "screenshot_digest_mismatch": (
+        "invalid_image",
+        "Screenshot integrity validation failed.",
+    ),
+    "image_limit_exceeded": (
+        "image_limit_exceeded",
+        "Screenshot exceeds the configured visual-observation limits.",
+    ),
+    "invalid_region": (
+        "invalid_region",
+        "The requested visual region is outside the screenshot bounds.",
+    ),
+    "comparison_limit_exceeded": (
+        "comparison_limit_exceeded",
+        "Visual comparison exceeds the configured pixel limit.",
+    ),
+    "optional_image_support_unavailable": (
+        "optional_image_support_unavailable",
+        "Optional local image comparison support is not installed.",
+    ),
+    "vision_operation_timeout": (
+        "vision_operation_timeout",
+        "Visual observation exceeded its configured time limit.",
+    ),
+    "vision_comparison_failed": (
+        "vision_comparison_failed",
+        "Visual comparison could not be completed.",
+    ),
+    "vision_provider_unavailable": (
+        "vision_provider_unavailable",
+        "The configured visual provider is unavailable.",
+    ),
+}
 
 # Operation classification fails closed: an unknown computer operation is HIGH.
 _LOW_OPERATIONS = frozenset(
@@ -157,6 +238,7 @@ class ComputerRuntime:
         limits: ComputerLimits | None = None,
         clock: Clock | None = None,
         monotonic: Callable[[], float] | None = None,
+        visual_verifier: VisualVerifier | None = None,
     ) -> None:
         self._provider = provider
         self._permissions = permissions
@@ -164,6 +246,7 @@ class ComputerRuntime:
         self._limits = limits or ComputerLimits()
         self._clock: Clock = clock or utc_now
         self._monotonic = monotonic or time.monotonic
+        self._visual_verifier = visual_verifier
         self._recovery = RecoveryPolicy(max_retries=self._limits.max_retries)
         self._action_counts: OrderedDict[str, int] = OrderedDict()
 
@@ -232,6 +315,7 @@ class ComputerRuntime:
         self,
         action: MouseAction,
         verification: VerificationCondition | None = None,
+        visual_verification: VisualVerificationCondition | None = None,
     ) -> ComputerActionResult:
         if action.kind is not MouseActionKind.MOVE:
             return self._invalid_action(
@@ -254,6 +338,7 @@ class ComputerRuntime:
             permission_level=classify_computer_operation("computer_move_mouse"),
             operation=partial(self._provider.move_mouse, action.point, duration_s=duration),
             verification=condition,
+            visual_verification=visual_verification,
             retry_safe=True,
             metadata={
                 "x": action.point.x,
@@ -266,6 +351,7 @@ class ComputerRuntime:
         self,
         action: MouseAction,
         verification: VerificationCondition | None = None,
+        visual_verification: VisualVerificationCondition | None = None,
     ) -> ComputerActionResult:
         if action.kind is not MouseActionKind.CLICK:
             return self._invalid_action("computer_click", action.action_id, "invalid_action_kind")
@@ -276,6 +362,7 @@ class ComputerRuntime:
             permission_level=classify_computer_operation("computer_click"),
             operation=partial(self._provider.click, action.point, button=action.button),
             verification=verification,
+            visual_verification=visual_verification,
             retry_safe=False,
             metadata={"x": action.point.x, "y": action.point.y, "button": action.button.value},
         )
@@ -284,6 +371,7 @@ class ComputerRuntime:
         self,
         action: MouseAction,
         verification: VerificationCondition | None = None,
+        visual_verification: VisualVerificationCondition | None = None,
     ) -> ComputerActionResult:
         if action.kind is not MouseActionKind.DOUBLE_CLICK:
             return self._invalid_action(
@@ -296,6 +384,7 @@ class ComputerRuntime:
             permission_level=classify_computer_operation("computer_double_click"),
             operation=partial(self._provider.double_click, action.point, button=action.button),
             verification=verification,
+            visual_verification=visual_verification,
             retry_safe=False,
             metadata={"x": action.point.x, "y": action.point.y, "button": action.button.value},
         )
@@ -304,6 +393,7 @@ class ComputerRuntime:
         self,
         action: FocusWindowAction,
         verification: VerificationCondition | None = None,
+        visual_verification: VisualVerificationCondition | None = None,
     ) -> ComputerActionResult:
         condition = verification or VerificationCondition(
             kind=VerificationKind.ACTIVE_WINDOW_IS,
@@ -316,6 +406,7 @@ class ComputerRuntime:
             permission_level=classify_computer_operation("computer_focus_window"),
             operation=partial(self._provider.focus_window, action.window_identifier),
             verification=condition,
+            visual_verification=visual_verification,
             retry_safe=True,
             target_window=action.window_identifier,
         )
@@ -324,6 +415,7 @@ class ComputerRuntime:
         self,
         action: SelectUIElementAction,
         verification: VerificationCondition | None = None,
+        visual_verification: VisualVerificationCondition | None = None,
     ) -> ComputerActionResult:
         condition = verification or VerificationCondition(
             kind=VerificationKind.UI_ELEMENT_SELECTED,
@@ -341,6 +433,7 @@ class ComputerRuntime:
                 action.automation_id,
             ),
             verification=condition,
+            visual_verification=visual_verification,
             retry_safe=False,
             target_window=action.window_identifier,
             metadata={
@@ -353,6 +446,7 @@ class ComputerRuntime:
         self,
         action: KeyboardAction,
         verification: VerificationCondition | None = None,
+        visual_verification: VisualVerificationCondition | None = None,
     ) -> ComputerActionResult:
         if action.kind is KeyboardActionKind.PRESS_KEY:
             if action.key is None:
@@ -389,6 +483,7 @@ class ComputerRuntime:
             permission_level=classify_computer_operation(tool_name),
             operation=operation,
             verification=verification,
+            visual_verification=visual_verification,
             retry_safe=False,
             metadata={"character_count": len(action.text or "")}
             if action.kind is KeyboardActionKind.TYPE_TEXT
@@ -532,6 +627,7 @@ class ComputerRuntime:
         permission_level: PermissionLevel,
         operation: Callable[[], None],
         verification: VerificationCondition | None,
+        visual_verification: VisualVerificationCondition | None,
         retry_safe: bool,
         target_window: str | None = None,
         metadata: ActionMetadata | None = None,
@@ -551,6 +647,33 @@ class ComputerRuntime:
         self._action_counts.move_to_end(task_id)
         if len(self._action_counts) > self._MAX_TRACKED_TASKS:
             self._action_counts.popitem(last=False)
+
+        visual_result = self._visual_not_run(visual_verification)
+        visual_verifier = self._visual_verifier
+        if visual_verification is not None and visual_verifier is None:
+            return self._finish_action(
+                tool_name=tool_name,
+                action_id=action_id,
+                action=action,
+                permission_level=permission_level,
+                status=ComputerActionStatus.INVALID,
+                attempted=False,
+                provider_completed=False,
+                attempts=0,
+                before=None,
+                after=None,
+                verification_result=not_run("visual_verifier_unavailable"),
+                visual_verification=self._visual_uncertain(
+                    visual_verification, "visual_verifier_unavailable"
+                ),
+                error_code="visual_verifier_unavailable",
+                error="visual verification is not configured",
+                retry_safe=False,
+                verification=verification,
+                task_id=task_id,
+                step_id=step_id,
+                metadata=metadata,
+            )
 
         request = _ObservationRequest(
             screen=True,
@@ -573,19 +696,26 @@ class ComputerRuntime:
                 VerificationKind.UI_ELEMENT_SELECTED,
                 VerificationKind.UI_ELEMENT_PRESENCE,
             },
-            screenshot=verification is not None
-            and verification.kind is VerificationKind.SCREENSHOT_CHANGED,
+            screenshot=(
+                visual_verification is not None
+                or (
+                    verification is not None
+                    and verification.kind is VerificationKind.SCREENSHOT_CHANGED
+                )
+            ),
             window_identifier=(
                 target_window
                 or (verification.window_identifier if verification is not None else None)
             ),
         )
         try:
-            observed_before = self._capture_observation(
+            observed_before_raw = self._capture_observation(
                 request,
-                metadata_only_screenshot=True,
+                metadata_only_screenshot=visual_verification is None,
                 permission_action_id=action_id,
             )
+            visual_before_screenshot = observed_before_raw.screenshot
+            observed_before = self._metadata_only_observation(observed_before_raw)
         except ComputerError as exc:
             pre_status = (
                 ComputerActionStatus.DENIED
@@ -604,6 +734,7 @@ class ComputerRuntime:
                 before=None,
                 after=None,
                 verification_result=not_run("pre_action_observation_failed"),
+                visual_verification=visual_result,
                 error_code=exc.code,
                 error=exc.message,
                 retry_safe=False,
@@ -626,6 +757,7 @@ class ComputerRuntime:
                 before=None,
                 after=None,
                 verification_result=not_run("pre_action_observation_failed"),
+                visual_verification=visual_result,
                 error_code=mapped.code,
                 error=mapped.message,
                 retry_safe=False,
@@ -646,6 +778,113 @@ class ComputerRuntime:
             permission_level,
             metadata=metadata,
         )
+        if visual_verification is not None:
+            assert visual_verifier is not None
+            if visual_before_screenshot is None:
+                visual_result = self._visual_uncertain(
+                    visual_verification, "pre_action_screenshot_unavailable"
+                )
+                return self._finish_action(
+                    tool_name=tool_name,
+                    action_id=action_id,
+                    action=action,
+                    permission_level=permission_level,
+                    status=ComputerActionStatus.INVALID,
+                    attempted=False,
+                    provider_completed=False,
+                    attempts=0,
+                    before=observed_before,
+                    after=None,
+                    verification_result=not_run("pre_action_screenshot_unavailable"),
+                    visual_verification=visual_result,
+                    error_code="pre_action_screenshot_unavailable",
+                    error="visual verification requires a bounded pre-action screenshot",
+                    retry_safe=False,
+                    verification=verification,
+                    task_id=task_id,
+                    step_id=step_id,
+                    metadata=metadata,
+                )
+            try:
+                before_frame = visual_verifier.validate_screenshot(visual_before_screenshot)
+                if (
+                    visual_verification.region is not None
+                    and not visual_verification.region.fits_within(before_frame.size)
+                ):
+                    visual_result = self._visual_uncertain(
+                        visual_verification, "visual_region_out_of_bounds"
+                    )
+                    return self._finish_action(
+                        tool_name=tool_name,
+                        action_id=action_id,
+                        action=action,
+                        permission_level=permission_level,
+                        status=ComputerActionStatus.INVALID,
+                        attempted=False,
+                        provider_completed=False,
+                        attempts=0,
+                        before=observed_before,
+                        after=None,
+                        verification_result=not_run("visual_region_out_of_bounds"),
+                        visual_verification=visual_result,
+                        error_code="visual_region_out_of_bounds",
+                        error="visual verification region exceeds screenshot bounds",
+                        retry_safe=False,
+                        verification=verification,
+                        task_id=task_id,
+                        step_id=step_id,
+                        metadata=metadata,
+                    )
+            except VisionError as exc:
+                error_code, error_message = self._safe_vision_error(exc)
+                visual_result = self._visual_uncertain(visual_verification, error_code)
+                return self._finish_action(
+                    tool_name=tool_name,
+                    action_id=action_id,
+                    action=action,
+                    permission_level=permission_level,
+                    status=ComputerActionStatus.INVALID,
+                    attempted=False,
+                    provider_completed=False,
+                    attempts=0,
+                    before=observed_before,
+                    after=None,
+                    verification_result=not_run("visual_preflight_failed"),
+                    visual_verification=visual_result,
+                    error_code=error_code,
+                    error=error_message,
+                    retry_safe=False,
+                    verification=verification,
+                    task_id=task_id,
+                    step_id=step_id,
+                    metadata=metadata,
+                )
+            except Exception:
+                visual_result = self._visual_uncertain(
+                    visual_verification, "visual_preflight_failed"
+                )
+                return self._finish_action(
+                    tool_name=tool_name,
+                    action_id=action_id,
+                    action=action,
+                    permission_level=permission_level,
+                    status=ComputerActionStatus.INVALID,
+                    attempted=False,
+                    provider_completed=False,
+                    attempts=0,
+                    before=observed_before,
+                    after=None,
+                    verification_result=not_run("visual_preflight_failed"),
+                    visual_verification=visual_result,
+                    error_code="visual_preflight_failed",
+                    error="visual verification preflight failed",
+                    retry_safe=False,
+                    verification=verification,
+                    task_id=task_id,
+                    step_id=step_id,
+                    metadata=metadata,
+                )
+
         validation_error = self._validate_action_bounds(
             action=action,
             observation=observed_before,
@@ -667,6 +906,7 @@ class ComputerRuntime:
                 before=observed_before,
                 after=None,
                 verification_result=not_run("action_validation_failed"),
+                visual_verification=visual_result,
                 error_code=code,
                 error=message,
                 retry_safe=False,
@@ -695,6 +935,7 @@ class ComputerRuntime:
                 before=observed_before,
                 after=None,
                 verification_result=not_run("permission_denied"),
+                visual_verification=visual_result,
                 error_code=authorization.error_code or "permission_denied",
                 error=authorization.error or "computer action denied by permission policy",
                 retry_safe=False,
@@ -749,11 +990,12 @@ class ComputerRuntime:
                 attempt_error is not None and attempt_error.code == "action_timeout"
             )
             try:
-                final_after = self._capture_observation(
+                final_after_raw = self._capture_observation(
                     request,
-                    metadata_only_screenshot=True,
+                    metadata_only_screenshot=visual_verification is None,
                     permission_action_id=action_id,
                 )
+                final_after = self._metadata_only_observation(final_after_raw)
             except ComputerError as exc:
                 final_error_code = exc.code
                 final_error = exc.message
@@ -778,6 +1020,140 @@ class ComputerRuntime:
                 final_error_code = "action_timeout"
                 final_error = (
                     "computer action exceeded its configured timeout; outcome may be uncertain"
+                )
+                break
+
+            if visual_verification is not None:
+                assert visual_verifier is not None
+                if visual_before_screenshot is None or final_after_raw.screenshot is None:
+                    visual_result = self._visual_uncertain(
+                        visual_verification, "visual_screenshot_unavailable"
+                    )
+                else:
+                    try:
+                        visual_result = self._validate_visual_result(
+                            visual_verifier.verify_screenshots(
+                                visual_before_screenshot,
+                                final_after_raw.screenshot,
+                                visual_verification,
+                            ),
+                            visual_verification,
+                        )
+                    except VisionError as exc:
+                        error_code, _ = self._safe_vision_error(exc)
+                        visual_result = self._visual_uncertain(visual_verification, error_code)
+                    except Exception:
+                        visual_result = self._visual_uncertain(
+                            visual_verification, "visual_verification_failed"
+                        )
+
+                refresh_count = min(max(0, visual_verifier.max_observation_retries), 2)
+                for _ in range(
+                    refresh_count
+                    if visual_result.status is VisualVerificationStatus.UNCERTAIN
+                    else 0
+                ):
+                    if self._monotonic() >= deadline:
+                        break
+                    try:
+                        refreshed = self._capture_observation(
+                            _ObservationRequest(screenshot=True),
+                            metadata_only_screenshot=False,
+                            permission_action_id=action_id,
+                        )
+                    except Exception:
+                        visual_result = self._visual_uncertain(
+                            visual_verification, "visual_refresh_failed"
+                        )
+                        break
+                    recovery_observations.append(self._metadata_only_observation(refreshed))
+                    final_after = self._metadata_only_observation(refreshed)
+                    if verification is not None:
+                        final_verification = verify_condition(
+                            verification, observed_before, final_after
+                        )
+                    if refreshed.screenshot is None or visual_before_screenshot is None:
+                        visual_result = self._visual_uncertain(
+                            visual_verification, "visual_refresh_screenshot_unavailable"
+                        )
+                        break
+                    try:
+                        visual_result = self._validate_visual_result(
+                            visual_verifier.verify_screenshots(
+                                visual_before_screenshot,
+                                refreshed.screenshot,
+                                visual_verification,
+                            ),
+                            visual_verification,
+                        )
+                    except VisionError as exc:
+                        error_code, _ = self._safe_vision_error(exc)
+                        visual_result = self._visual_uncertain(visual_verification, error_code)
+                    except Exception:
+                        visual_result = self._visual_uncertain(
+                            visual_verification, "visual_verification_failed"
+                        )
+                    if visual_result.status is not VisualVerificationStatus.UNCERTAIN:
+                        break
+
+                if self._monotonic() > deadline:
+                    final_status = ComputerActionStatus.TIMED_OUT
+                    final_error_code = "action_timeout"
+                    final_error = (
+                        "computer action exceeded its configured timeout; outcome may be uncertain"
+                    )
+                    break
+
+                if visual_result.status is VisualVerificationStatus.FAILED:
+                    final_status = ComputerActionStatus.VERIFICATION_FAILED
+                    final_error_code = "visual_verification_failed"
+                    final_error = visual_result.reason
+                elif visual_result.status is VisualVerificationStatus.UNCERTAIN:
+                    final_status = (
+                        ComputerActionStatus.VERIFICATION_FAILED
+                        if verification is not None
+                        else ComputerActionStatus.UNVERIFIED
+                    )
+                    if attempt_error is not None:
+                        final_error_code = attempt_error.code
+                        final_error = attempt_error.message
+                    else:
+                        final_error_code = "visual_verification_uncertain"
+                        final_error = "visual evidence remained uncertain after bounded refreshes"
+                elif (
+                    verification is None or verification.kind is VerificationKind.SCREENSHOT_CHANGED
+                ):
+                    # Pixel differences prove only that pixels changed; they
+                    # cannot prove that the requested click/action occurred.
+                    final_status = ComputerActionStatus.UNVERIFIED
+                    final_error_code = "semantic_verification_required"
+                    final_error = (
+                        "pixel-level visual evidence is not semantic action proof; "
+                        "supply a non-screenshot deterministic postcondition"
+                    )
+                elif final_verification.ok:
+                    final_status = ComputerActionStatus.VERIFIED
+                    if attempt_error is not None:
+                        final_error_code = attempt_error.code
+                        final_error = attempt_error.message
+                else:
+                    final_status = ComputerActionStatus.VERIFICATION_FAILED
+                    final_error_code = "verification_failed"
+                    final_error = final_verification.reason
+                break
+
+            if (
+                final_verification.ok
+                and verification is not None
+                and verification.kind is VerificationKind.SCREENSHOT_CHANGED
+            ):
+                # A changed screenshot is a pixel fact, not evidence that the
+                # requested click or other semantic action occurred.
+                final_status = ComputerActionStatus.UNVERIFIED
+                final_error_code = "semantic_verification_required"
+                final_error = (
+                    "screenshot change is not semantic action proof; "
+                    "supply a non-screenshot deterministic postcondition"
                 )
                 break
 
@@ -842,6 +1218,7 @@ class ComputerRuntime:
             before=initial_observation,
             after=final_after,
             verification_result=final_verification,
+            visual_verification=visual_result,
             error_code=final_error_code,
             error=final_error,
             retry_safe=retry_safe,
@@ -850,6 +1227,71 @@ class ComputerRuntime:
             step_id=authorization.step_id,
             metadata=metadata,
             recovery_observations=recovery_observations,
+        )
+
+    @staticmethod
+    def _metadata_only_observation(observation: ComputerObservation) -> ComputerObservation:
+        """Strip ephemeral screenshot bytes before any result/history path."""
+        if observation.screenshot is None or observation.screenshot.payload is None:
+            return observation
+        return observation.model_copy(update={"screenshot": observation.screenshot.metadata_only()})
+
+    @staticmethod
+    def _visual_not_run(
+        condition: VisualVerificationCondition | None,
+    ) -> VisualVerificationResult | None:
+        if condition is None:
+            return None
+        return ComputerRuntime._visual_uncertain(condition, "visual_verification_not_run")
+
+    @staticmethod
+    def _safe_vision_error(error: VisionError) -> tuple[str, str]:
+        """Return a known, content-free visual error code and message."""
+        code = error.code if isinstance(error.code, str) else ""
+        return _VISION_ERROR_MESSAGES.get(
+            code,
+            ("visual_provider_failed", "Visual verification could not be completed."),
+        )
+
+    @staticmethod
+    def _validate_visual_result(
+        value: object,
+        condition: VisualVerificationCondition,
+    ) -> VisualVerificationResult:
+        """Revalidate a provider verdict and recompute its pixel predicate."""
+        try:
+            result = VisualVerificationResult.model_validate(value)
+        except Exception:
+            return ComputerRuntime._visual_uncertain(condition, "invalid_visual_result")
+        if result.condition != condition:
+            return ComputerRuntime._visual_uncertain(condition, "visual_condition_mismatch")
+        if result.status is VisualVerificationStatus.UNCERTAIN:
+            # Uncertainty is monotone: never upgrade it from provider-supplied
+            # metrics or text, even if the result also contains a partial match.
+            return ComputerRuntime._visual_uncertain(condition, "visual_evidence_uncertain")
+        assert result.match is not None
+        recomputed = verify_visual_match(result.match, condition)
+        if recomputed.status is not result.status:
+            return ComputerRuntime._visual_uncertain(condition, "visual_result_inconsistent")
+        return recomputed
+
+    @staticmethod
+    def _visual_uncertain(
+        condition: VisualVerificationCondition,
+        reason: str,
+    ) -> VisualVerificationResult:
+        """Build a content-free UNCERTAIN result for a failed visual boundary."""
+        safe_reason = (
+            reason
+            if isinstance(reason, str) and reason in _SAFE_VISUAL_REASONS
+            else "visual_provider_failed"
+        )
+        return VisualVerificationResult(
+            condition=condition,
+            status=VisualVerificationStatus.UNCERTAIN,
+            method="unavailable",
+            confidence=None,
+            reason=safe_reason,
         )
 
     def _validate_action_bounds(
@@ -1040,14 +1482,22 @@ class ComputerRuntime:
         step_id: str,
         metadata: ActionMetadata | None,
         recovery_observations: list[ComputerObservation] | None = None,
+        visual_verification: VisualVerificationResult | None = None,
     ) -> ComputerActionResult:
-        verified = status is ComputerActionStatus.VERIFIED and verification_result.ok
+        verified = (
+            status is ComputerActionStatus.VERIFIED
+            and verification_result.ok
+            and (
+                visual_verification is None
+                or visual_verification.status is VisualVerificationStatus.VERIFIED
+            )
+        )
         recovery = self._recovery.recommend(
             action=action,
             risk_level=permission_level,
             status=status,
             attempts=attempts,
-            retry_safe=retry_safe,
+            retry_safe=retry_safe and visual_verification is None,
             condition=verification,
         )
         result = ComputerActionResult(
@@ -1064,6 +1514,7 @@ class ComputerRuntime:
             observed_after=after,
             recovery_observations=recovery_observations or [],
             verification=verification_result,
+            visual_verification=visual_verification,
             error_code=error_code,
             error=error,
             retryable=recovery.action is RecoveryAction.RETRY,

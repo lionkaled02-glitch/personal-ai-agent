@@ -47,8 +47,10 @@ Phase 6 (IMPLEMENTED): a provider-neutral computer foundation with bounded
 observations, an optional Windows UI Automation provider, explicit low/medium
 primitive tools, permission enforcement, event redaction, deterministic
 postcondition verification, timeouts, and bounded idempotent recovery. It is
-not unrestricted autonomous computer control. Browser automation, voice,
-media generation, semantic/vector retrieval, durable memory, UI, and document
+not unrestricted autonomous computer control. Phase 7 (IMPLEMENTED) adds
+same-path ephemeral local pixel-only screenshot observation and verification;
+it does not add OCR or semantic vision. Browser automation, voice, media
+generation, semantic/vector retrieval, durable memory, UI, and document
 creation remain PLANNED — see ARCHITECTURE.md and ROADMAP.md.
 """
 
@@ -203,6 +205,40 @@ from .schema import validate_against_schema
 from .tasks import StepStatus, Task, TaskState, TaskStep
 from .tool_runtime import ToolInvocation, ToolRuntime
 from .tools import Tool, ToolRegistry, ToolResult, ToolSpec
+from .vision import (
+    BoundingBox,
+    ComparisonLimitError,
+    DeterministicVisionProvider,
+    ImageLimitError,
+    ImageSize,
+    InvalidImageError,
+    InvalidRegionError,
+    OptionalImageSupportError,
+    RegionSource,
+    VisionComparisonError,
+    VisionError,
+    VisionLimits,
+    VisionProvider,
+    VisionProviderError,
+    VisionTimeoutError,
+    VisualAnalysis,
+    VisualMatch,
+    VisualMatchStatus,
+    VisualObservation,
+    VisualRegion,
+    VisualVerificationCondition,
+    VisualVerificationKind,
+    VisualVerificationResult,
+    VisualVerificationStatus,
+    VisualVerifier,
+)
+from .vision.runtime import VisionRuntime
+from .vision.tools import (
+    VISION_ANALYZE_SCREENSHOT_TOOL_NAME,
+    VISION_TOOL_NAMES,
+    VisionAnalyzeScreenshotTool,
+    register_vision_tools,
+)
 from .workspace import Workspace, WorkspaceError, WorkspaceLimits
 from .workspace_tools import (
     CopyFileTool,
@@ -217,7 +253,7 @@ from .workspace_tools import (
     register_workspace_tools,
 )
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 __all__ = [
     "COMPUTER_TOOL_NAMES",
@@ -232,16 +268,20 @@ __all__ = [
     "REMEMBER_TOOL_NAME",
     "SUPPORTED_PROVIDERS",
     "UPDATE_MEMORY_TOOL_NAME",
+    "VISION_ANALYZE_SCREENSHOT_TOOL_NAME",
+    "VISION_TOOL_NAMES",
     "Agent",
     "AgentCoreError",
     "AgentEvent",
     "ApprovalCallback",
     "ApprovalRequest",
     "BasicVerifier",
+    "BoundingBox",
     "Bounds",
     "CalculatorTool",
     "Capability",
     "ChatMessage",
+    "ComparisonLimitError",
     "ComputerActionResult",
     "ComputerActionStatus",
     "ComputerActiveWindowTool",
@@ -275,6 +315,7 @@ __all__ = [
     "DateTimeTool",
     "DeleteFileTool",
     "DemoTool",
+    "DeterministicVisionProvider",
     "Document",
     "DocumentChunk",
     "DocumentError",
@@ -287,9 +328,13 @@ __all__ = [
     "FileInfoTool",
     "FocusWindowAction",
     "ForgetTool",
+    "ImageLimitError",
+    "ImageSize",
     "InMemoryMemoryStore",
     "IndexDocumentTool",
     "InspectDocumentTool",
+    "InvalidImageError",
+    "InvalidRegionError",
     "JsonUtilsTool",
     "KeyboardAction",
     "KeyboardActionKind",
@@ -316,6 +361,7 @@ __all__ = [
     "MouseButton",
     "MoveFileTool",
     "OpenAIProvider",
+    "OptionalImageSupportError",
     "PermissionDecision",
     "PermissionDeniedError",
     "PermissionLevel",
@@ -334,6 +380,7 @@ __all__ = [
     "RecoveryAction",
     "RecoveryPolicy",
     "RecoveryRecommendation",
+    "RegionSource",
     "RememberTool",
     "RetrievalIndex",
     "ScreenInfo",
@@ -370,6 +417,24 @@ __all__ = [
     "VerificationStatus",
     "Verifier",
     "VerifyResult",
+    "VisionAnalyzeScreenshotTool",
+    "VisionComparisonError",
+    "VisionError",
+    "VisionLimits",
+    "VisionProvider",
+    "VisionProviderError",
+    "VisionRuntime",
+    "VisionTimeoutError",
+    "VisualAnalysis",
+    "VisualMatch",
+    "VisualMatchStatus",
+    "VisualObservation",
+    "VisualRegion",
+    "VisualVerificationCondition",
+    "VisualVerificationKind",
+    "VisualVerificationResult",
+    "VisualVerificationStatus",
+    "VisualVerifier",
     "WindowInfo",
     "WindowsComputerProvider",
     "Workspace",
@@ -388,6 +453,7 @@ __all__ = [
     "register_default_tools",
     "register_document_tools",
     "register_memory_tools",
+    "register_vision_tools",
     "register_workspace_tools",
     "utc_now",
     "validate_against_schema",

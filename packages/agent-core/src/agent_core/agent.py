@@ -37,6 +37,9 @@ from .providers.mock import MockModelProvider
 from .rag.context import ContextBuilder
 from .tasks import Task, TaskState, TaskStep
 from .tools import ToolRegistry
+from .vision.limits import VisionLimits
+from .vision.runtime import VisionRuntime
+from .vision.tools import register_vision_tools
 from .workspace import Workspace
 from .workspace_tools import register_workspace_tools
 
@@ -167,14 +170,21 @@ class Agent:
         permissions = PermissionManager(approval=approval)
         events = EventBus(clock=clock)
         if computer_provider is not None:
+            vision_runtime = VisionRuntime(
+                limits=VisionLimits.from_settings(resolved),
+                events=events,
+                clock=clock,
+            )
             computer_runtime = ComputerRuntime(
                 provider=computer_provider,
                 permissions=permissions,
                 events=events,
                 limits=ComputerLimits.from_settings(resolved),
                 clock=clock,
+                visual_verifier=vision_runtime,
             )
             register_computer_tools(registry, computer_runtime)
+            register_vision_tools(registry, computer_runtime, vision_runtime)
         return cls(
             planner=ModelPlanner(gateway),
             registry=registry,

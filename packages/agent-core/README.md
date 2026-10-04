@@ -3,9 +3,10 @@
 The only importable package in this repository. It contains the Phase 0
 foundation, the Phase 1 model layer, the Phase 2 tool layer, the Phase 3
 workspace layer, the Phase 4 document layer, the Phase 5 memory & RAG layer,
-and the Phase 6 safe computer foundation of the personal AI agent: task
-state model, planner, executor, tool
-system with registry, permission manager, structured event bus, a
+the Phase 6 safe computer foundation, and the Phase 7 Vision & Visual
+Verification layer of the personal AI agent. It includes the task state model,
+planner, executor, tool system with registry, permission manager, structured
+event bus, a
 vendor-neutral `ModelProvider` interface with a `ModelGateway` (error
 normalization + safe retry), a configuration-driven provider factory, a
 deterministic mock provider (offline default), an OpenAI provider adapter
@@ -68,6 +69,17 @@ and the **memory & RAG foundation** (Phase 5):
   sensitive and event-redacted; screenshots are bounded and never persisted
   by the core. Timeouts are cooperative (synchronous OS calls cannot be
   forcibly interrupted).
+- **Vision & Visual Verification (Phase 7)** — provider-neutral Pydantic
+  models and a deterministic offline provider reuse the Phase 6 screenshot
+  path for metadata-only observation and bounded local RGB comparisons. The
+  `vision_analyze_screenshot` tool is registered only with an explicit
+  computer provider and returns no screenshot bytes. Visual results use
+  `VERIFIED` / `FAILED` / `UNCERTAIN`; a pixel difference is never proof of a
+  click or other semantic action, and a successful action still requires a
+  non-screenshot Phase 6 postcondition. On uncertainty, only bounded
+  screenshot refreshes can retry—actions are never blindly repeated. No OCR,
+  semantic vision model, remote API/cloud upload, or persistent screenshot
+  storage is included.
 
 To opt in with the Windows provider, install the extra on Windows and pass
 an explicit provider. MEDIUM interactions are denied unless the existing
@@ -86,8 +98,11 @@ agent = Agent.create_configured(
 )
 ```
 
-Without an explicit provider, computer tools are not registered. The core
-remains importable off Windows; constructing the Windows adapter elsewhere
+Without an explicit provider, neither computer nor vision tools are
+registered. With one, `vision_analyze_screenshot` reuses its permission-gated
+Phase 6 screenshot path. Metadata-only analysis needs no image extra; local
+comparison of non-identical images uses the optional `vision-image` extra. The
+core remains importable off Windows; constructing the Windows adapter elsewhere
 raises a structured `UnsupportedPlatformError`.
 
 ## Extras
@@ -97,6 +112,9 @@ raises a structured `UnsupportedPlatformError`.
   python-docx, python-pptx, openpyxl). Without it, the binary parsers fail
   with a structured `parser_unavailable` error at parse time; TXT and
   Markdown always work.
+- `agent-core[vision-image]` — optional Pillow support for local deterministic
+  RGB comparison; imported lazily. Metadata-only observation and exact
+  screenshot-payload matches work without it.
 - `agent-core[computer-windows]` — Windows-only UI Automation dependencies
   (pywinauto, pywin32, Pillow), installed only on Windows. The module remains
   importable without this extra; provider construction then raises a

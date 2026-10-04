@@ -117,6 +117,36 @@ class TestStaticSourceBoundaries:
                     offenders.append(f"{path.name}: {match.group(1)}")
         assert offenders == [], f"non-whitelisted import in document layer: {offenders}"
 
+    def test_vision_layer_has_no_remote_or_semantic_model_dependency(self) -> None:
+        """Phase 7 allows only Pydantic and lazy optional Pillow support."""
+        import sys
+
+        allowed_third_party = {"pydantic", "PIL"}
+        offenders: list[str] = []
+        for path in sorted((SRC / "vision").rglob("*.py")):
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=str(path))
+            for match in _IMPORT_RE.finditer(source):
+                imported = match.group(1)
+                top = imported.split(".")[0]
+                if top in sys.stdlib_module_names or top == "agent_core":
+                    continue
+                if top not in allowed_third_party:
+                    offenders.append(f"{path.name}: {imported}")
+                elif top == "PIL" and path.name != "comparison.py":
+                    offenders.append(f"{path.name}: non-local optional image import {imported}")
+            if path.name == "comparison.py":
+                for node in tree.body:
+                    if isinstance(node, ast.Import):
+                        names = [alias.name.split(".")[0] for alias in node.names]
+                    elif isinstance(node, ast.ImportFrom):
+                        names = [node.module.split(".")[0]] if node.module else []
+                    else:
+                        continue
+                    if "PIL" in names:
+                        offenders.append(f"{path.name}: eager optional image import {names}")
+        assert offenders == [], f"unsafe vision dependency boundary: {offenders}"
+
     def test_computer_dependencies_are_optional_and_platform_isolated(self) -> None:
         """Only the Windows adapter may mention optional UI packages, and
         it must import them lazily rather than at module load time."""

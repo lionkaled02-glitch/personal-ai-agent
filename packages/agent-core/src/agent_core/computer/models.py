@@ -17,6 +17,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..permissions import PermissionLevel
+from ..vision.models import VisualVerificationResult, VisualVerificationStatus
 
 HARD_MAX_SCREENSHOT_BYTES = 4 * 1024 * 1024
 HARD_MAX_TEXT_INPUT_CHARS = 1_024
@@ -390,7 +391,7 @@ class ScreenshotObservation(ComputerModel):
     timestamp: datetime
     source: str = Field(default="primary_display", min_length=1, max_length=64)
     media_type: Literal["image/png"] = "image/png"
-    payload: bytes | None = None
+    payload: bytes | None = Field(default=None, repr=False)
     payload_bytes: int = Field(default=0, ge=0, le=HARD_MAX_SCREENSHOT_BYTES, strict=True)
     payload_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
@@ -456,10 +457,31 @@ class ComputerActionResult(ComputerModel):
     observed_after: ComputerObservation | None = None
     recovery_observations: list[ComputerObservation] = Field(default_factory=list, max_length=3)
     verification: VerificationResult
+    visual_verification: VisualVerificationResult | None = None
     error_code: str | None = Field(default=None, max_length=64)
     error: str | None = Field(default=None, max_length=256)
     retryable: bool = False
     recovery: RecoveryRecommendation
+
+    @model_validator(mode="after")
+    def successful_action_requires_semantic_postcondition(self) -> ComputerActionResult:
+        if not self.success:
+            return self
+        if self.status is not ComputerActionStatus.VERIFIED or not self.verified:
+            raise ValueError("successful actions must be explicitly verified")
+        if self.verification.condition is VerificationKind.SCREENSHOT_CHANGED:
+            raise ValueError("a screenshot change is not semantic action proof")
+        if self.visual_verification is not None:
+            if self.visual_verification.status is not VisualVerificationStatus.VERIFIED:
+                raise ValueError("uncertain or failed visual verification cannot be successful")
+            if (
+                self.verification.status is not VerificationStatus.PASSED
+                or self.verification.condition is None
+            ):
+                raise ValueError(
+                    "visual verification also requires a passed semantic postcondition"
+                )
+        return self
 
 
 class ComputerOperationResult(ComputerModel):

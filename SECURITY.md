@@ -84,7 +84,7 @@ no hard-coded secrets, no committed credentials, no secrets in logs/events.
 - **Workspace tool events carry only relative workspace paths** (POSIX
   style) and metadata (size, count, error code) — never the absolute host
   path and never directory listings of the host.
-- A future persistent audit log (Phase 11) will serialize
+- A future persistent audit log (Phase 12) will serialize
   `AgentEvent.to_dict()` — the on-disk format is fixed now so it can be made
   append-only and redaction-aware later.
 
@@ -102,10 +102,11 @@ confined to the configured workspace root (`WORKSPACE_ROOT`, default
 written, or deleted through any tool. Document tools read only through that
 same boundary, and documents are untrusted *data* — their content is never
 executed or treated as instructions (see the Phase 4 subsection below).
-Phase 6 computer tools are not registered by default: the application must
-explicitly inject a `ComputerProvider` into `Agent.create_configured`. This
-provider path is local and exposes only the declared observation and
-interaction tools described below; it adds no network egress.
+Phase 6 computer tools and Phase 7 visual tools are not registered by
+default: the application must explicitly inject a `ComputerProvider` into
+`Agent.create_configured`. The local provider path exposes only the declared
+observation, interaction, and pixel-level visual tools described below; it
+adds no network egress or cloud upload path.
 
 ### Tool runtime security (Phase 2)
 
@@ -291,12 +292,13 @@ model:
 - Side-effecting tools beyond the workspace boundary (web fetch/search)
   need per-tool scoping and MEDIUM/HIGH permission levels; any process or
   shell execution would be HIGH and require an explicit policy.
-- Browser automation remains NOT IMPLEMENTED (Phase 7). Any computer
-  extension beyond Phase 6's explicit primitives needs a new threat model,
+- Browser automation remains NOT IMPLEMENTED (Phase 8). Semantic vision
+  models, OCR, and remote vision APIs/cloud upload are out of scope. Any
+  computer extension beyond Phase 6's explicit primitives needs a new threat model,
   named tool schemas, scope-specific permission checks, and verification;
   shell/command execution, remote desktop, arbitrary actions, and security
   bypasses are outside this project's permitted scope.
-- Any UI/API needs authn/authz and input validation (Phase 11).
+- Any UI/API needs authn/authz and input validation (Phase 12).
 - Vector/semantic retrieval (embeddings) and persistent memory must preserve
   the lexical-index guarantees above (deterministic, bounded, provider-
   neutral) when built on the `RetrievalIndex` protocol (documents) and the
@@ -452,12 +454,58 @@ computer automation. Its security boundary is:
   raises `unsupported_platform`; missing Windows extras raise
   `provider_unavailable`. Windows hardware behavior has not been manually
   verified in this phase.
-- **Explicitly out of scope:** browser/Playwright, vision LLM, voice,
+- **Explicitly out of scope:** browser/Playwright, semantic vision models/OCR, remote vision APIs/cloud upload, voice,
   unrestricted autonomy, remote desktop/network control, shell/PowerShell/
   subprocess, credential extraction/keylogging, persistence/stealth, security
   or UAC bypasses, arbitrary filesystem/clipboard access, process/DLL
   injection, registry changes, screen recording/surveillance, and automatic
   destructive actions.
+
+### Vision & visual verification security (Phase 7)
+
+Phase 7 analyzes only a fresh screenshot obtained through the existing Phase 6
+`ComputerRuntime`. `VisionRuntime` has no acquisition method and is not a
+second screenshot system. Its security boundary is:
+
+- **Explicit opt-in and least privilege.** `vision_analyze_screenshot` is a
+  LOW-permission tool registered only when an explicit `ComputerProvider` is
+  supplied. It calls the existing screenshot runtime and therefore reuses
+  Phase 6 permissions and bounded screenshot acquisition. Visual conditions
+  on action tools are strict-schema validated before a named action can run.
+- **No semantic or remote vision.** The configured default is the offline
+  `DeterministicVisionProvider`: it validates PNG metadata and compares RGB
+  pixels only. It does not recognize objects, read text, infer intent, discover
+  credentials, or establish that a click occurred. There is no external
+  vision SDK/API, network client, cloud image upload, OCR service, or semantic
+  model. Pillow is an optional `vision-image` extra, imported lazily only for
+  local comparison of non-identical images.
+- **Pixel facts are not action proof.** A visual predicate may be `VERIFIED`,
+  `FAILED`, or `UNCERTAIN`, but VERIFIED means only that its declared
+  pixel-level predicate passed. A screenshot change alone never marks a
+  computer action successful; when a visual condition is requested, overall
+  action success additionally requires a non-screenshot Phase 6 deterministic
+  postcondition. A missing, failed, or uncertain result is never coerced to
+  success.
+- **Bounded work and recovery.** `VISION_*` limits cap encoded bytes, image
+  dimensions and decoded pixels, region count, label/summary length, comparison
+  pixels, cooperative elapsed time, and screenshot-only uncertainty refreshes.
+  A refresh may repeat observation/verification within its small configured
+  budget, but it never replays the mouse/keyboard action. HIGH-risk operations
+  remain non-retryable under the existing recovery policy.
+- **Ephemeral bytes and safe events.** `ImageFrame` is an in-process value;
+  its payload is excluded from repr and serialization. Visual observations,
+  comparisons, action results, recovery observations, and events contain only
+  bounded metadata, pixel metrics, hashes/references, or status—not screenshot
+  bytes. The analysis tool never returns the image. Nothing is recorded,
+  persisted, or uploaded automatically; the existing explicit Phase 6
+  screenshot tool remains the only path that returns image bytes to its caller.
+- **Untrusted visual content.** Screenshot-visible content and any provider
+  labels/summaries are data, never instructions or permission inputs. The
+  default implementation emits metadata only and performs no OCR. No content
+  can change permissions, create actions, or bypass approval.
+- **Optional dependency boundary.** Static tests allow only the core Pydantic
+  dependency and a lazy Pillow import in the local comparison module; the
+  vision package has no network, browser, OCR, or semantic-model dependency.
 
 ---
 
@@ -505,6 +553,12 @@ issue (do not post secrets or proof-of-concept exploit details publicly).
 | Before/after observations, explicit verification, bounded safe retry and cooperative timeout behavior | IMPLEMENTED |
 | Computer outputs and typed-text inputs redacted from events; screenshot bytes are ephemeral | IMPLEMENTED |
 | Windows dependencies are optional/lazy; unsupported platforms return structured errors | IMPLEMENTED |
+| Vision tool registered only with explicit computer provider; shares Phase 6 screenshot acquisition/permissions | IMPLEMENTED |
+| Local deterministic pixel-only analysis/comparison; no OCR, semantic model, or remote vision API | IMPLEMENTED |
+| Vision image/region/label/summary/time/comparison/retry bounds; lazy optional Pillow | IMPLEMENTED |
+| Visual action conditions are schema-validated; pixel-only success requires a separate non-screenshot postcondition | IMPLEMENTED |
+| Visual uncertainty uses bounded observation refresh only; never replays the action; screenshot bytes absent from events/results | IMPLEMENTED |
+| Vision static dependency boundary and synthetic image/security tests | IMPLEMENTED |
 | No shell, remote control, clipboard, arbitrary filesystem, injection, stealth, or surveillance capability | IMPLEMENTED |
 | Windows hardware behavior | NOT VERIFIED (no manual desktop test) |
 | Static + behavioral verification that forbidden capabilities are absent | IMPLEMENTED |
@@ -515,7 +569,7 @@ issue (do not post secrets or proof-of-concept exploit details publicly).
 | Untrusted model output: strict JSON + plan schema + tool allow-list | IMPLEMENTED |
 | Operational-only events/logs, bounded payloads | IMPLEMENTED |
 | Synchronous human approval channel | PLANNED (wire-up in Phase 2) |
-| Persistent, redaction-aware audit log | PLANNED (Phase 11) |
+| Persistent, redaction-aware audit log | PLANNED (Phase 12) |
 | Broader, separately reviewed computer workflows | NOT IMPLEMENTED (future; explicit named operations only) |
-| Browser automation | NOT IMPLEMENTED (Phase 7) |
-| UI/API authentication | NOT IMPLEMENTED (Phase 11) |
+| Browser automation | NOT IMPLEMENTED (Phase 8) |
+| UI/API authentication | NOT IMPLEMENTED (Phase 12) |
