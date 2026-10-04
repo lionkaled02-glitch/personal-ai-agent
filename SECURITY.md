@@ -106,7 +106,11 @@ Phase 6 computer tools and Phase 7 visual tools are not registered by
 default: the application must explicitly inject a `ComputerProvider` into
 `Agent.create_configured`. The local provider path exposes only the declared
 observation, interaction, and pixel-level visual tools described below; it
-adds no network egress or cloud upload path.
+adds no network egress or cloud upload path. The Phase 8 `VoiceRuntime` is
+constructed only with explicit in-process providers; none is auto-created,
+and its built-in mocks do not use audio hardware, network access, or keys.
+Voice transport hands text into the same `Agent.run` path and never grants
+voice-specific permissions.
 
 ### Tool runtime security (Phase 2)
 
@@ -292,12 +296,14 @@ model:
 - Side-effecting tools beyond the workspace boundary (web fetch/search)
   need per-tool scoping and MEDIUM/HIGH permission levels; any process or
   shell execution would be HIGH and require an explicit policy.
-- Browser automation remains NOT IMPLEMENTED (Phase 8). Semantic vision
-  models, OCR, and remote vision APIs/cloud upload are out of scope. Any
-  computer extension beyond Phase 6's explicit primitives needs a new threat model,
-  named tool schemas, scope-specific permission checks, and verification;
-  shell/command execution, remote desktop, arbitrary actions, and security
-  bypasses are outside this project's permitted scope.
+- Browser automation remains NOT IMPLEMENTED (Phase 9). Semantic vision
+  models, OCR, and remote vision APIs/cloud upload are out of scope. Real
+  microphone capture and external/cloud STT/TTS are also NOT IMPLEMENTED;
+  Phase 8 provides only provider-neutral in-process contracts and offline
+  mocks. Any computer extension beyond Phase 6's explicit primitives needs a
+  new threat model, named tool schemas, scope-specific permission checks, and
+  verification; shell/command execution, remote desktop, arbitrary actions,
+  and security bypasses are outside this project's permitted scope.
 - Any UI/API needs authn/authz and input validation (Phase 12).
 - Vector/semantic retrieval (embeddings) and persistent memory must preserve
   the lexical-index guarantees above (deterministic, bounded, provider-
@@ -507,6 +513,54 @@ second screenshot system. Its security boundary is:
   dependency and a lazy Pillow import in the local comparison module; the
   vision package has no network, browser, OCR, or semantic-model dependency.
 
+### Voice Agent foundation security (Phase 8)
+
+Voice is an ordinary input/output transport. A transcription is untrusted
+user text and is passed once to `Agent.run(..., input_channel="voice")`; the
+existing planner, tool schemas, `PermissionManager`, approvals, executor, and
+verification remain authoritative. A spoken request cannot lower a tool's
+permission level or bypass confirmation. For example, HIGH-risk deletion
+still reaches the existing HIGH approval path and fails closed without
+approval.
+
+- **No hardware or external service.** There is no microphone capture,
+  Windows audio API, cloud STT/TTS adapter, network client, upload, or new
+  credential. Deterministic mocks run in-process and require no key. The
+  provider protocols are dependency-free; no external provider adapter is
+  implemented in this phase. Any future provider needs separate review and
+  explicit application-level configuration.
+- **Untrusted bounded audio.** `AudioInput` accepts only a bounded ephemeral
+  PCM byte buffer paired with validated metadata. It has no path/URL/storage
+  field. Payload bytes are hidden from repr and normal Pydantic serialization,
+  are passed to STT only for the synchronous call, and never enter the
+  `VoiceObservation` or event bus. Synthesized output bytes are similarly
+  bounded and hidden from serialization. Neither buffer is written to disk,
+  retained by the mock providers, or uploaded automatically.
+- **Content stays text, never code.** Normalization performs only NFC and
+  whitespace normalization while preserving punctuation; malformed Unicode,
+  empty results, and over-limit text fail deterministically. No OCR, LLM
+  cleanup, credential extraction, secret-special handling, shell, subprocess,
+  `eval`/`exec`, or arbitrary Python is added. Transcripts remain untrusted
+  instructions/data, not policy or permissions.
+- **Uncertainty and retries fail safely.** `UNCERTAIN` transcription is
+  exposed to the caller and is not handed to the agent or TTS. Provider time
+  ceilings are cooperative because calls are synchronous. Only failures
+  explicitly marked retryable can retry under `VOICE_MAX_RETRIES`; timeouts,
+  uncertain transcriptions, and agent actions are never automatically
+  repeated. Provider exception text is replaced by stable sanitized errors.
+- **Metadata-only events.** `VOICE_*` events include bounded operational
+  metadata (audio size/duration/format, confidence/status/language/character
+  count, and stable error codes), never raw audio, synthesized bytes, or
+  transcript content. The Agent's voice-mode task/plan/tool lifecycle events
+  redact transcript-derived inputs, outputs, results, and error details; plan
+  tool names are allow-listed. `voice_normalize`, when explicitly registered,
+  is LOW permission and marks both inputs and outputs sensitive so the existing
+  Tool Runtime also redacts them outside voice mode.
+- **No ambient state/storage.** Runtime limits are injected through
+  `VoiceLimits` / `VOICE_*` settings; provider instances are explicit and
+  local to the caller. There is no persistent microphone recording, hidden
+  global provider, task replay, or audio cache.
+
 ---
 
 ## 5. Reporting
@@ -559,6 +613,11 @@ issue (do not post secrets or proof-of-concept exploit details publicly).
 | Visual action conditions are schema-validated; pixel-only success requires a separate non-screenshot postcondition | IMPLEMENTED |
 | Visual uncertainty uses bounded observation refresh only; never replays the action; screenshot bytes absent from events/results | IMPLEMENTED |
 | Vision static dependency boundary and synthetic image/security tests | IMPLEMENTED |
+| Voice transcript is handed once through canonical Agent permission flow; HIGH/MEDIUM approvals remain authoritative | IMPLEMENTED |
+| Voice audio/text/time/retry bounds, deterministic offline mocks, stable errors, and uncertainty fail-closed | IMPLEMENTED |
+| Voice events and serialization exclude raw audio; transcript content is omitted from voice-mode task/plan/tool lifecycle events | IMPLEMENTED |
+| Voice static dependency/storage boundary and audio-event security tests | IMPLEMENTED |
+| No microphone capture, Windows audio hardware, or external/cloud STT/TTS adapters | NOT IMPLEMENTED (future phase) |
 | No shell, remote control, clipboard, arbitrary filesystem, injection, stealth, or surveillance capability | IMPLEMENTED |
 | Windows hardware behavior | NOT VERIFIED (no manual desktop test) |
 | Static + behavioral verification that forbidden capabilities are absent | IMPLEMENTED |
@@ -571,5 +630,5 @@ issue (do not post secrets or proof-of-concept exploit details publicly).
 | Synchronous human approval channel | PLANNED (wire-up in Phase 2) |
 | Persistent, redaction-aware audit log | PLANNED (Phase 12) |
 | Broader, separately reviewed computer workflows | NOT IMPLEMENTED (future; explicit named operations only) |
-| Browser automation | NOT IMPLEMENTED (Phase 8) |
+| Browser automation | NOT IMPLEMENTED (Phase 9) |
 | UI/API authentication | NOT IMPLEMENTED (Phase 12) |

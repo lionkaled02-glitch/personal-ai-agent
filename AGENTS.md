@@ -90,7 +90,9 @@ Do **not** add, even as a "quick win":
 - Real model-provider adapters (OpenAI/Anthropic/… calls).
 - Real tools with side effects (shell, filesystem writes, network).
 - Computer control, browser automation, or desktop operation.
-- Voice, image/video generation, or any media pipeline.
+- Real microphone capture, real/cloud STT or TTS providers, external voice
+  services, image/video generation, or media pipelines. Phase 8 permits only
+  the bounded provider-neutral voice foundation and deterministic local fakes.
 - A user interface or HTTP/WebSocket API server.
 
 These are tracked as future phases in [ROADMAP.md](ROADMAP.md). Premature

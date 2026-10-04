@@ -66,6 +66,15 @@ Variables:
 - ``VISION_MAX_COMPARISON_PIXELS`` (int; deterministic pixel-work cap)
 - ``VISION_MAX_OBSERVATION_RETRIES`` (int; screenshot-only uncertainty refreshes)
 - ``VISION_MAX_OPERATION_SECONDS`` (float; cooperative elapsed-time limit)
+- ``VOICE_MAX_AUDIO_BYTES`` / ``VOICE_MAX_DURATION_S`` (input/output bounds)
+- ``VOICE_MAX_TEXT_CHARS`` / ``VOICE_MAX_LANGUAGE_CHARS`` /
+  ``VOICE_MAX_VOICE_NAME_CHARS`` / ``VOICE_MAX_SYNTHESIS_TEXT_CHARS``
+- ``VOICE_MAX_TRANSCRIPTION_TIME_S`` / ``VOICE_MAX_SYNTHESIS_TIME_S`` /
+  ``VOICE_MAX_RETRIES`` / ``VOICE_MIN_TRANSCRIPTION_CONFIDENCE``
+
+Voice time limits are cooperative because synchronous provider calls cannot
+be forcibly interrupted. Phase 8 adds no microphone hardware, API keys, or
+external STT/TTS provider.
 
 ``DATA_ROOT`` holds logs and task artifacts; it is independent of the
 workspace boundary, which the Phase 3 filesystem tools enforce strictly.
@@ -140,6 +149,17 @@ class Settings(BaseModel):
     vision_max_comparison_pixels: int = 1_048_576
     vision_max_observation_retries: int = 1
     vision_max_operation_seconds: float = 5.0
+    # Voice Agent Foundation (Phase 8) — provider-neutral bounds only.
+    voice_max_audio_bytes: int = 1_048_576
+    voice_max_duration_s: float = 30.0
+    voice_max_text_chars: int = 4_000
+    voice_max_language_chars: int = 35
+    voice_max_voice_name_chars: int = 64
+    voice_max_synthesis_text_chars: int = 2_000
+    voice_max_transcription_time_s: float = 15.0
+    voice_max_synthesis_time_s: float = 15.0
+    voice_max_retries: int = 1
+    voice_min_transcription_confidence: float = 0.6
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Settings:
@@ -281,6 +301,41 @@ class Settings(BaseModel):
             ),
             vision_max_operation_seconds=float(
                 source.get("VISION_MAX_OPERATION_SECONDS", defaults.vision_max_operation_seconds)
+            ),
+            voice_max_audio_bytes=int(
+                source.get("VOICE_MAX_AUDIO_BYTES", defaults.voice_max_audio_bytes)
+            ),
+            voice_max_duration_s=float(
+                source.get("VOICE_MAX_DURATION_S", defaults.voice_max_duration_s)
+            ),
+            voice_max_text_chars=int(
+                source.get("VOICE_MAX_TEXT_CHARS", defaults.voice_max_text_chars)
+            ),
+            voice_max_language_chars=int(
+                source.get("VOICE_MAX_LANGUAGE_CHARS", defaults.voice_max_language_chars)
+            ),
+            voice_max_voice_name_chars=int(
+                source.get("VOICE_MAX_VOICE_NAME_CHARS", defaults.voice_max_voice_name_chars)
+            ),
+            voice_max_synthesis_text_chars=int(
+                source.get(
+                    "VOICE_MAX_SYNTHESIS_TEXT_CHARS", defaults.voice_max_synthesis_text_chars
+                )
+            ),
+            voice_max_transcription_time_s=float(
+                source.get(
+                    "VOICE_MAX_TRANSCRIPTION_TIME_S", defaults.voice_max_transcription_time_s
+                )
+            ),
+            voice_max_synthesis_time_s=float(
+                source.get("VOICE_MAX_SYNTHESIS_TIME_S", defaults.voice_max_synthesis_time_s)
+            ),
+            voice_max_retries=int(source.get("VOICE_MAX_RETRIES", defaults.voice_max_retries)),
+            voice_min_transcription_confidence=float(
+                source.get(
+                    "VOICE_MIN_TRANSCRIPTION_CONFIDENCE",
+                    defaults.voice_min_transcription_confidence,
+                )
             ),
         )
 

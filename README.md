@@ -62,13 +62,23 @@ This repository currently contains:
   blind action replay. Screenshot bytes are ephemeral, absent from events, and
   never stored or uploaded automatically. There is no second screenshot path,
   remote vision API, or semantic model.
+- **Phase 8: Voice Agent Foundation** — provider-neutral bounded audio,
+  transcription, normalization, and optional synthesis models/interfaces.
+  `VoiceRuntime` hands confident normalized text to the existing
+  `Agent.run(..., input_channel="voice")` exactly once, so planning,
+  permissions, execution, and verification are unchanged. Deterministic local
+  mocks require no keys/network; voice events contain metadata only and audio
+  payloads are ephemeral and excluded from serialization. No microphone
+  capture, external STT/TTS provider, or cloud audio upload is implemented.
 
 Everything else (tools beyond the workspace boundary, web access, browser
-automation, voice, media, document/presentation generation, durable memory,
-vector/semantic retrieval, semantic vision/OCR/remote vision APIs, and a user
-interface) is deliberately NOT IMPLEMENTED yet. Phase 7 adds only local
-pixel-level observation and verification; broader computer automation beyond
-the explicit Phase 6 primitives remains unimplemented.
+automation, real microphone capture, external/cloud STT/TTS, media,
+document/presentation generation, durable memory, vector/semantic retrieval,
+semantic vision/OCR/remote vision APIs, and a user interface) is deliberately
+NOT IMPLEMENTED yet. Browser automation remains a later phase; Phase 7 still
+provides only local pixel-level observation and verification, and broader
+computer automation beyond the explicit Phase 6 primitives remains
+unimplemented.
 
 > See [ROADMAP.md](ROADMAP.md) and [ARCHITECTURE.md](ARCHITECTURE.md) for
 > exactly what exists and what does not.
@@ -194,6 +204,15 @@ A single Python package, `agent-core`, that proves the architecture works:
   computer tools are created automatically. Screen captures and UI metadata
   are sensitive, caller-requested results and are redacted from events.
   There is no generic arbitrary-action tool.
+- **Voice Agent Foundation (Phase 8)** — strict bounded PCM/audio models,
+  provider-neutral STT/TTS protocols, deterministic offline mocks, NFC plus
+  whitespace normalization, structured `CONFIDENT`/`UNCERTAIN` transcription
+  states, cooperative timeouts, bounded transient retries, and metadata-only
+  voice events. A confident transcript enters the same `Agent.run` permission
+  and planning flow once; synthesis is optional and audio bytes stay out of
+  repr, normal serialization, and events. No microphone capture, cloud upload,
+  or real STT/TTS provider is included. `voice_normalize` is an optional
+  LOW-permission text-only tool.
 - **One mock tool** (`demo_tool`) used for the end-to-end tests.
 
 The **first end-to-end flow** is implemented and tested:
@@ -238,6 +257,7 @@ User Request → Agent → Planner → Tool Registry → Mock Tool → Result �
 │       │   ├── computer/        # provider-neutral computer runtime + Windows adapter (Phase 6)
 │       │   ├── computer_tools/  # explicit observation/action tools (Phases 6–7)
 │       │   ├── vision/          # ephemeral observation + pixel verification (Phase 7)
+│       │   ├── voice/           # bounded provider-neutral STT/TTS foundation (Phase 8)
 │       │   ├── tool_runtime.py  # ToolRuntime (permission-gated execution)
 │       │   ├── errors.py        # exception hierarchy
 │       │   └── providers/
@@ -334,9 +354,11 @@ semantic/vector retrieval (the Phase 4 document and Phase 5 memory
 retrieval are lexical by design and swappable via the `RetrievalIndex` and
 `MemoryRetriever` protocols), durable (persisted) memory beyond the
 process lifetime, tools that leave the workspace boundary (web fetch/search,
-shell/command execution), browser automation (Phase 8), voice (Phase 9), semantic vision/OCR/remote
-vision APIs, image/video generation, presentation/document generation, and a
-user interface are all **future phases**. Phase 7 includes only local pixel
-comparison over Phase 6 screenshots; the computer tools remain bounded,
+shell/command execution), browser automation (Phase 9), real microphone
+capture, external/cloud STT/TTS providers, semantic vision/OCR/remote vision
+APIs, image/video generation, presentation/document generation, and a user
+interface are all **future phases**. Phase 8 includes only provider-neutral
+voice transport and local deterministic mocks. Phase 7 includes only local
+pixel comparison over Phase 6 screenshots; computer tools remain bounded,
 explicit primitives and do not enable unrestricted autonomy.
 Adding new capabilities is explicitly gated in [ROADMAP.md](ROADMAP.md).

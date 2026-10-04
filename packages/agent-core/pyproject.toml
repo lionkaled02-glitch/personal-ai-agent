@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "agent-core"
 version = "0.8.0"
-description = "Core abstractions for a modular personal autonomous AI agent: tasks, planner, executor, permissioned tools, model providers, workspace, document and memory retrieval, safe computer interaction, and visual verification."
+description = "Core abstractions for a modular personal autonomous AI agent: tasks, planner, executor, permissioned tools, model providers, workspace, document and memory retrieval, safe computer interaction, visual verification, and provider-neutral voice transport."
 readme = "README.md"
 requires-python = ">=3.11"
 # Deliberately minimal: the core must not depend on any vendor SDK or

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
+from typing import Literal
 
 from .builtin_tools import register_default_tools
 from .computer import ComputerLimits, ComputerProvider, ComputerRuntime
@@ -216,19 +217,44 @@ class Agent:
     def context_builder(self) -> ContextBuilder:
         return self._context_builder
 
-    def run(self, request: str) -> Task:
-        """Run one user request to a terminal task state."""
+    def run(
+        self,
+        request: str,
+        *,
+        input_channel: Literal["text", "voice"] = "text",
+    ) -> Task:
+        """Run one user request through the canonical agent task flow.
+
+        Voice is only a transport: it enters the same planner, permission
+        manager, executor, and verifier. For privacy, voice-origin task and
+        tool lifecycle events redact transcript-derived inputs, outputs, and
+        error details; the text-mode event shape remains backwards compatible.
+        """
+        if input_channel not in {"text", "voice"}:
+            raise ValueError("unsupported input channel")
         now = self._clock()
         task = Task.create(request, now=now)
-        self._events.emit(EventType.TASK_CREATED, task_id=task.id, data={"request": request})
+        created_data = (
+            {"input_channel": "voice", "request_chars": len(request)}
+            if input_channel == "voice"
+            else {"request": request}
+        )
+        self._events.emit(EventType.TASK_CREATED, task_id=task.id, data=created_data)
 
         task.transition(TaskState.PLANNING, now=now)
+        available_tools = self._registry.list_tools()
         try:
-            plan = self._planner.plan(request, self._registry.list_tools())
+            plan = self._planner.plan(request, available_tools)
         except PlanningError as exc:
             task.error = f"planning failed: {exc}"
             task.transition(TaskState.FAILED, now=self._clock())
-            self._events.emit(EventType.TASK_FAILED, task_id=task.id, data={"error": task.error})
+            self._events.emit(
+                EventType.TASK_FAILED,
+                task_id=task.id,
+                data={"error": "voice request planning failed"}
+                if input_channel == "voice"
+                else {"error": task.error},
+            )
             return task
 
         task.steps = [
@@ -240,12 +266,19 @@ class Agent:
             )
             for step in plan.steps
         ]
+        safe_tool_names = {tool.name for tool in available_tools}
         self._events.emit(
             EventType.PLAN_CREATED,
             task_id=task.id,
             data={
                 "steps": [
                     {
+                        "tool_name": step.tool_name
+                        if step.tool_name in safe_tool_names
+                        else "unavailable_tool"
+                    }
+                    if input_channel == "voice"
+                    else {
                         "tool_name": step.tool_name,
                         "description": bounded_text(step.description),
                     }
@@ -253,4 +286,7 @@ class Agent:
                 ],
             },
         )
-        return self._executor.execute(task)
+        return self._executor.execute(
+            task,
+            redact_sensitive_events=input_channel == "voice",
+        )

@@ -266,7 +266,7 @@ arbitrary-action interface.
 | Optional `computer-windows` extra: lazily loaded Windows UI Automation provider; import-safe elsewhere and explicit `unsupported_platform` behavior | IMPLEMENTED |
 | Agent integration is opt-in: tools are registered only when an explicit provider is passed to `Agent.create_configured(computer_provider=...)` | IMPLEMENTED |
 | Deterministic fake-provider tests cover tools, permission/approval, bounds, verification, redaction, retry/timeouts, settings, and unsupported platforms | IMPLEMENTED |
-| Browser/Playwright, semantic vision models/OCR, remote vision APIs/cloud upload, voice, remote desktop, shell/PowerShell, arbitrary code/actions, clipboard, and surveillance | NOT IMPLEMENTED (out of scope) |
+| Browser/Playwright, semantic vision models/OCR, remote vision APIs/cloud upload, real microphone capture/external STT-TTS, remote desktop, shell/PowerShell, arbitrary code/actions, clipboard, and surveillance | NOT IMPLEMENTED (out of scope) |
 
 **Acceptance:** deterministic tests use an in-memory fake provider (no Windows
 desktop required); the shared permission manager is enforced even for direct
@@ -325,22 +325,44 @@ persistent models.
 
 ---
 
-## Phase 8 — Browser automation
+## Phase 8 — Voice Agent Foundation ✅ IMPLEMENTED
+
+Voice is a transport over the existing agent loop, not a second planner,
+executor, or permission path. The phase is a provider-neutral foundation
+only: no real microphone hardware, external STT/TTS provider, API key,
+network upload, or persistent audio storage is included.
+
+| Item | Status |
+| --- | --- |
+| Strict bounded PCM format, audio metadata, ephemeral input/output buffers, transcription/synthesis, observation, and response models | IMPLEMENTED |
+| Provider-neutral `STTProvider` / `TTSProvider` protocols plus deterministic local mocks | IMPLEMENTED |
+| Deterministic Unicode NFC and whitespace normalization; punctuation retained; empty/oversized/invalid text rejected | IMPLEMENTED |
+| One canonical `Agent.run(..., input_channel="voice")` handoff; existing intent/planning/permission/execution/verification remains authoritative | IMPLEMENTED |
+| Explicit `CONFIDENT` / `UNCERTAIN` transcription state; uncertain output does not reach Agent or TTS | IMPLEMENTED |
+| Safe audio/text/language/voice/duration/time/retry limits from `VOICE_*` configuration | IMPLEMENTED |
+| Cooperative provider timeouts, bounded retry only for explicitly retryable provider failures, no command replay | IMPLEMENTED |
+| Metadata-only voice events; input and synthesized payloads excluded from repr/serialization/events | IMPLEMENTED |
+| Optional LOW-permission `voice_normalize` text-only tool with sensitive event redaction | IMPLEMENTED |
+| No network, credentials, persistent microphone recording, or optional audio/ML dependency required | IMPLEMENTED |
+| Real microphone capture, Windows audio hardware, external/cloud STT/TTS adapters | NOT IMPLEMENTED (future phase) |
+
+**Acceptance (met):** valid bounded PCM metadata is validated; malformed,
+oversized, and over-duration data fails deterministically; normalization is
+local and content-preserving beyond canonical Unicode/whitespace; uncertain
+provider results never become success; the existing Agent loop is called once
+and its HIGH/MEDIUM permissions and approvals are unchanged. Provider errors
+are sanitized, retries are finite, events carry metadata only, and audio
+buffers are never persisted or uploaded.
+
+---
+
+## Phase 9 — Browser automation
 
 | Item | Status |
 | --- | --- |
 | Browser provider (e.g. Playwright) behind a tool/agent boundary | NOT IMPLEMENTED |
 | HIGH-permission + approval for navigations/actions | NOT IMPLEMENTED |
 | DOM/page content as untrusted tool output | NOT IMPLEMENTED |
-
----
-
-## Phase 9 — Voice
-
-| Item | Status |
-| --- | --- |
-| Speech-to-text / text-to-speech providers | NOT IMPLEMENTED |
-| Voice as an input/output channel for the UI | NOT IMPLEMENTED |
 
 ---
 

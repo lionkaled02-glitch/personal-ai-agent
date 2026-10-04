@@ -3,8 +3,9 @@
 The only importable package in this repository. It contains the Phase 0
 foundation, the Phase 1 model layer, the Phase 2 tool layer, the Phase 3
 workspace layer, the Phase 4 document layer, the Phase 5 memory & RAG layer,
-the Phase 6 safe computer foundation, and the Phase 7 Vision & Visual
-Verification layer of the personal AI agent. It includes the task state model,
+the Phase 6 safe computer foundation, the Phase 7 Vision & Visual
+Verification layer, and the Phase 8 Voice Agent Foundation of the personal
+AI agent. It includes the task state model,
 planner, executor, tool system with registry, permission manager, structured
 event bus, a
 vendor-neutral `ModelProvider` interface with a `ModelGateway` (error
@@ -80,6 +81,18 @@ and the **memory & RAG foundation** (Phase 5):
   screenshot refreshes can retry—actions are never blindly repeated. No OCR,
   semantic vision model, remote API/cloud upload, or persistent screenshot
   storage is included.
+- **Voice Agent Foundation (Phase 8)** — provider-neutral `STTProvider` /
+  `TTSProvider` protocols; strict bounded PCM, transcription, synthesis,
+  observation, and response models; deterministic local mocks; NFC and
+  whitespace normalization; explicit confidence/uncertainty; safe
+  `VOICE_*` limits, cooperative timeouts, and bounded retry. A confident
+  transcript is handed once to the existing `Agent.run` flow, so voice cannot
+  bypass HIGH/MEDIUM permissions or approvals. Voice events contain metadata
+  only; audio input/output is ephemeral and excluded from repr/serialization.
+  Use `VoiceRuntime.from_settings(provider, settings=Settings.from_env())` to
+  apply the validated `VOICE_*` bounds. No microphone hardware, external/cloud
+  provider, API key, or audio storage is included. The mock TTS output is
+  silent PCM test data, not speech.
 
 To opt in with the Windows provider, install the extra on Windows and pass
 an explicit provider. MEDIUM interactions are denied unless the existing

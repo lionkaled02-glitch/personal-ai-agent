@@ -147,6 +147,38 @@ class TestStaticSourceBoundaries:
                         offenders.append(f"{path.name}: eager optional image import {names}")
         assert offenders == [], f"unsafe vision dependency boundary: {offenders}"
 
+    def test_voice_layer_has_no_network_audio_hardware_or_storage_dependency(self) -> None:
+        """Phase 8 voice foundation is stdlib/Pydantic-only and in-memory."""
+        import sys
+
+        allowed_third_party = {"pydantic"}
+        voice_root = SRC / "voice"
+        offenders: list[str] = []
+        for path in sorted(voice_root.rglob("*.py")):
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=str(path))
+            for match in _IMPORT_RE.finditer(source):
+                imported = match.group(1)
+                top = imported.split(".")[0]
+                if top in sys.stdlib_module_names or top == "agent_core":
+                    continue
+                if top not in allowed_third_party:
+                    offenders.append(f"{path.name}: non-whitelisted import {imported}")
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                function = node.func
+                if isinstance(function, ast.Name) and function.id == "open":
+                    offenders.append(f"{path.name}: persistent file open")
+                if isinstance(function, ast.Attribute) and function.attr in {
+                    "write_bytes",
+                    "write_text",
+                    "mkdir",
+                    "unlink",
+                }:
+                    offenders.append(f"{path.name}: persistent file operation {function.attr}")
+        assert offenders == [], f"unsafe voice dependency/storage boundary: {offenders}"
+
     def test_computer_dependencies_are_optional_and_platform_isolated(self) -> None:
         """Only the Windows adapter may mention optional UI packages, and
         it must import them lazily rather than at module load time."""
@@ -639,3 +671,50 @@ class TestConfiguredAgentMemoryTopology:
         # The exposed store/builder are the provider-neutral abstractions.
         assert agent.memory_store.limits.max_items >= 1
         assert isinstance(agent.context_builder, ContextBuilder)
+
+
+class TestVoiceSecurityBoundaries:
+    def test_raw_audio_is_never_serialized_into_voice_events(self) -> None:
+        from datetime import UTC, datetime
+
+        from agent_core import (
+            AudioEncoding,
+            AudioFormat,
+            AudioInput,
+            AudioMetadata,
+            EventBus,
+            EventType,
+            MockSTTProvider,
+            VoiceRuntime,
+        )
+
+        marker = b"RAW-MICROPHONE-BYTES"
+        audio = AudioInput(
+            metadata=AudioMetadata(
+                duration=0.1,
+                format=AudioFormat(
+                    sample_rate=100,
+                    channels=1,
+                    sample_width=2,
+                    encoding=AudioEncoding.PCM_S16LE,
+                ),
+                byte_size=len(marker),
+            ),
+            payload=marker,
+        )
+        events = EventBus(clock=lambda: datetime(2026, 10, 4, tzinfo=UTC))
+        observation = VoiceRuntime(
+            MockSTTProvider(text="metadata only"),
+            events=events,
+        ).transcribe(audio)
+        assert "payload" not in audio.model_dump()
+        assert "payload" not in observation.model_dump()
+        assert marker.decode() not in observation.model_dump_json()
+        for event in events.history:
+            assert event.type in {
+                EventType.VOICE_TRANSCRIPTION_STARTED,
+                EventType.VOICE_TRANSCRIPTION_COMPLETED,
+            }
+            assert "text" not in event.data
+            assert "payload" not in event.data
+            assert marker.decode() not in repr(event.data)

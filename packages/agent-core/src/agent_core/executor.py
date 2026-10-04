@@ -86,13 +86,17 @@ class Executor:
     def runtime(self) -> ToolRuntime:
         return self._runtime
 
-    def execute(self, task: Task) -> Task:
+    def execute(self, task: Task, *, redact_sensitive_events: bool = False) -> Task:
         if task.state is not TaskState.PLANNING:
             raise TaskStateError(f"executor requires a task in PLANNING, got {task.state.value}")
         task.transition(TaskState.RUNNING, now=self._clock())
 
         for step in task.steps:
-            if not self._run_step(task, step):
+            if not self._run_step(
+                task,
+                step,
+                redact_sensitive_events=redact_sensitive_events,
+            ):
                 return task  # task reached a terminal state
 
         task.transition(TaskState.VERIFYING, now=self._clock())
@@ -103,20 +107,38 @@ class Executor:
             self._events.emit(
                 EventType.TASK_COMPLETED,
                 task_id=task.id,
-                data={"result": task.result, "steps_completed": len(task.steps)},
+                data={"steps_completed": len(task.steps)}
+                if redact_sensitive_events
+                else {"result": task.result, "steps_completed": len(task.steps)},
             )
         else:
             task.error = "verification failed: " + "; ".join(verdict.errors)
             task.transition(TaskState.FAILED, now=self._clock())
-            self._events.emit(EventType.TASK_FAILED, task_id=task.id, data={"error": task.error})
+            self._events.emit(
+                EventType.TASK_FAILED,
+                task_id=task.id,
+                data={"error": "agent task verification failed"}
+                if redact_sensitive_events
+                else {"error": task.error},
+            )
         return task
 
-    def _run_step(self, task: Task, step: TaskStep) -> bool:
+    def _run_step(
+        self,
+        task: Task,
+        step: TaskStep,
+        *,
+        redact_sensitive_events: bool,
+    ) -> bool:
         """Execute one step. Returns False when the task reached a terminal state."""
         try:
             tool = self._registry.require(step.tool_name)
         except ToolNotFoundError as exc:
-            self._fail_task(task, str(exc))
+            self._fail_task(
+                task,
+                str(exc),
+                redact_sensitive_events=redact_sensitive_events,
+            )
             return False
 
         # Phase 2: the step is picked up (observable before any permission work).
@@ -138,6 +160,7 @@ class Executor:
                 task,
                 step,
                 f"tool {step.tool_name!r} denied by permission policy",
+                redact_sensitive_events=redact_sensitive_events,
             )
         if decision is PermissionDecision.REQUIRES_APPROVAL:
             self._events.emit(
@@ -166,6 +189,7 @@ class Executor:
                     task,
                     step,
                     f"approval denied for tool {step.tool_name!r}",
+                    redact_sensitive_events=redact_sensitive_events,
                 )
 
         step.transition(StepStatus.RUNNING)
@@ -186,13 +210,22 @@ class Executor:
                 tool_name=tool.spec.name,
                 permission_level=tool.spec.permission_level,
             ):
-                result = self._runtime.execute(invocation, decision=PermissionDecision.ALLOWED)
+                result = self._runtime.execute(
+                    invocation,
+                    decision=PermissionDecision.ALLOWED,
+                    redact_sensitive_io=redact_sensitive_events,
+                )
         except PermissionDeniedError as exc:
             # Unreachable via this path (we only pass ALLOWED); treated as a
             # denial so no code path can execute an unapproved tool.
             step.transition(StepStatus.CANCELLED)
             self._emit_tool_denied(task, step, "permission_backstop")
-            return self._cancel_task(task, step, str(exc))
+            return self._cancel_task(
+                task,
+                step,
+                str(exc),
+                redact_sensitive_events=redact_sensitive_events,
+            )
 
         if result.ok:
             step.transition(StepStatus.COMPLETED)
@@ -201,7 +234,11 @@ class Executor:
 
         step.transition(StepStatus.FAILED)
         step.error = result.error
-        self._fail_task(task, result.error or "tool failed without an error message")
+        self._fail_task(
+            task,
+            result.error or "tool failed without an error message",
+            redact_sensitive_events=redact_sensitive_events,
+        )
         return False
 
     def _emit_tool_denied(self, task: Task, step: TaskStep, reason: str) -> None:
@@ -213,17 +250,36 @@ class Executor:
             data={"tool_name": step.tool_name, "reason": reason},
         )
 
-    def _cancel_task(self, task: Task, step: TaskStep, reason: str) -> bool:
+    def _cancel_task(
+        self,
+        task: Task,
+        step: TaskStep,
+        reason: str,
+        *,
+        redact_sensitive_events: bool,
+    ) -> bool:
         task.error = reason
         task.transition(TaskState.CANCELLED, now=self._clock())
         self._events.emit(
             EventType.TASK_CANCELLED,
             task_id=task.id,
-            data={"error": reason, "tool_name": step.tool_name},
+            data={"error_code": "task_cancelled", "tool_name": step.tool_name}
+            if redact_sensitive_events
+            else {"error": reason, "tool_name": step.tool_name},
         )
         return False
 
-    def _fail_task(self, task: Task, error: str) -> None:
+    def _fail_task(
+        self,
+        task: Task,
+        error: str,
+        *,
+        redact_sensitive_events: bool,
+    ) -> None:
         task.error = error
         task.transition(TaskState.FAILED, now=self._clock())
-        self._events.emit(EventType.TASK_FAILED, task_id=task.id, data={"error": error})
+        self._events.emit(
+            EventType.TASK_FAILED,
+            task_id=task.id,
+            data={"error": "agent task failed"} if redact_sensitive_events else {"error": error},
+        )

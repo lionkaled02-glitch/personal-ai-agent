@@ -81,8 +81,14 @@ class ToolRuntime:
     def registry(self) -> ToolRegistry:
         return self._registry
 
-    def execute(self, invocation: ToolInvocation, *, decision: PermissionDecision) -> ToolResult:
-        """Run one invocation. Requires an ALLOWED permission decision."""
+    def execute(
+        self,
+        invocation: ToolInvocation,
+        *,
+        decision: PermissionDecision,
+        redact_sensitive_io: bool = False,
+    ) -> ToolResult:
+        """Run one invocation. Requires ALLOWED; optional caller privacy redaction."""
         if decision is not PermissionDecision.ALLOWED:
             raise PermissionDeniedError(
                 f"tool {invocation.tool_name!r} cannot execute: "
@@ -91,7 +97,7 @@ class ToolRuntime:
 
         started = self._clock()
         registered_tool = self._registry.get(invocation.tool_name)
-        sensitive_input = (
+        sensitive_input = redact_sensitive_io or (
             registered_tool.spec.sensitive_input if registered_tool is not None else False
         )
         self._events.emit(
@@ -113,7 +119,7 @@ class ToolRuntime:
             self._emit(
                 EventType.TOOL_INPUT_INVALID,
                 invocation,
-                error=str(exc),
+                error="voice tool input failed validation" if redact_sensitive_io else str(exc),
                 error_code="input_invalid",
             )
         except ToolExecutionError as exc:
@@ -123,7 +129,11 @@ class ToolRuntime:
                 self._emit(
                     EventType.TOOL_OUTPUT_INVALID,
                     invocation,
-                    error=result.error or "",
+                    error=(
+                        "voice tool output failed validation"
+                        if redact_sensitive_io
+                        else result.error or ""
+                    ),
                     error_code="output_invalid",
                 )
 
@@ -131,7 +141,7 @@ class ToolRuntime:
 
         if result.ok:
             current_tool = self._registry.get(invocation.tool_name)
-            sensitive_output = (
+            sensitive_output = redact_sensitive_io or (
                 current_tool.spec.sensitive_output if current_tool is not None else False
             )
             self._events.emit(
@@ -152,8 +162,10 @@ class ToolRuntime:
                 step_id=invocation.step_id,
                 data={
                     "tool_name": invocation.tool_name,
-                    "error": bounded_text(result.error or "tool failed"),
-                    "error_code": result.error_code,
+                    "error": "voice tool failed"
+                    if redact_sensitive_io
+                    else bounded_text(result.error or "tool failed"),
+                    "error_code": "voice_tool_failed" if redact_sensitive_io else result.error_code,
                 },
             )
         return result
