@@ -150,7 +150,7 @@ for the design decisions.
 | Observability: events carry ids/relative paths/counts/status, never document content; bounded payloads | IMPLEMENTED |
 | Vector/semantic retrieval (embeddings) — future, swappable via `RetrievalIndex` | NOT IMPLEMENTED (future) |
 | Persistent long-term memory | NOT IMPLEMENTED (future, Phase 5) |
-| Document/presentation *generation* (writing new documents) | NOT IMPLEMENTED (future, Phase 6) |
+| Document/presentation *generation* (writing new documents) | NOT IMPLEMENTED (deferred; no phase scheduled) |
 
 **Acceptance (met):** all six formats parse to the normalized model from
 deterministic fixtures; malformed/corrupt/unsupported/oversized inputs fail
@@ -246,16 +246,49 @@ Phase 0–4 suite still passes (regression).
 
 ---
 
-## Phase 6 — Document & presentation generation
+## Phase 6 — Safe Windows Computer Agent foundation ✅ IMPLEMENTED
+
+A provider-neutral, opt-in foundation for bounded desktop observation and
+explicit UI interaction. It is deliberately **not** unrestricted autonomous
+computer control. UI/window contents are untrusted data, all interactions
+use the existing fail-safe permission system, and there is no generic
+arbitrary-action interface.
 
 | Item | Status |
 | --- | --- |
-| Presentation generation (slides) | NOT IMPLEMENTED |
-| Document generation (writing new DOCX/PDF/…) | NOT IMPLEMENTED |
-| Output written under `data/generated` | NOT IMPLEMENTED |
+| Provider-neutral `ComputerProvider` protocol and strict bounded models for display, cursor, windows, UI elements, screenshots, intents, verification, and results | IMPLEMENTED |
+| Bounded observation tools: `computer_screen_info`, `computer_cursor_position`, `computer_active_window`, `computer_list_windows`, `computer_inspect_ui`, `computer_screenshot` (LOW) | IMPLEMENTED |
+| Explicit interaction tools: `computer_move_mouse`, `computer_click`, `computer_double_click`, `computer_focus_window`, `computer_select_ui_element`, `computer_press_key`, `computer_hotkey`, `computer_type_text` (MEDIUM) | IMPLEMENTED |
+| Risk classification: observations LOW, every interaction MEDIUM, destructive/external/unknown operations HIGH; existing `PermissionManager`, deny-list, and fail-safe approvals are reused | IMPLEMENTED |
+| Lifecycle: observe → validate intent → authorize → act → re-observe → verify; provider completion without a passed postcondition is not success | IMPLEMENTED |
+| Deterministic verification, structured results/events, sensitive I/O redaction, ephemeral screenshots, and bounded idempotent retries | IMPLEMENTED |
+| `COMPUTER_*` limits for action counts, timeouts, text, screenshot bytes, windows, UI elements, retries, movement duration, and cursor tolerance, all under hard caps | IMPLEMENTED |
+| Optional `computer-windows` extra: lazily loaded Windows UI Automation provider; import-safe elsewhere and explicit `unsupported_platform` behavior | IMPLEMENTED |
+| Agent integration is opt-in: tools are registered only when an explicit provider is passed to `Agent.create_configured(computer_provider=...)` | IMPLEMENTED |
+| Deterministic fake-provider tests cover tools, permission/approval, bounds, verification, redaction, retry/timeouts, settings, and unsupported platforms | IMPLEMENTED |
+| Browser/Playwright, vision-LLM, voice, remote desktop, shell/PowerShell, arbitrary code/actions, clipboard, destructive actions, and automatic actions | NOT IMPLEMENTED (out of scope) |
 
-(Document *analysis* — reading/parsing PDF/DOCX/… — is IMPLEMENTED in
-Phase 4.)
+**Acceptance:** deterministic tests use an in-memory fake provider (no Windows
+desktop required); the shared permission manager is enforced even for direct
+runtime/registry calls; the default configured agent does not register
+computer tools; only named tools are exposed; provider errors are sanitized;
+observation/action/event payloads stay bounded; non-idempotent input is never
+retried; the Windows adapter imports no platform dependency until explicitly
+constructed on Windows. Hardware behavior on Windows remains unverified.
+
+**Known limitations:**
+- The Windows adapter targets one primary display and pywinauto UI Automation;
+  desktop scaling and application-specific accessibility behavior vary.
+- Timeouts are cooperative elapsed-time checks around synchronous provider
+  calls. A blocked Windows API call cannot be forcibly interrupted by the
+  core; the result is marked timed out only after it returns.
+- Screenshots are returned only by the explicit screenshot tool, and remain
+  sensitive caller output. The core keeps no screenshot history or event
+  payload, but callers are responsible for handling returned bytes safely.
+- There has been no manual Windows hardware verification in this phase.
+
+Document and presentation *generation* (writing new files) remains deferred
+and unscheduled; document *analysis* is implemented in Phase 4.
 
 ---
 
@@ -278,16 +311,23 @@ Phase 4.)
 
 ---
 
-## Phase 9 — Computer control
+## Phase 9 — Extended Computer Workflows (future)
+
+Phase 6 provides only a conservative desktop foundation with named,
+bounded operations. Future work, if separately approved, must extend that
+surface with explicit tools and retain the same least-privilege, verification,
+and privacy guarantees; Phase 9 is not permission to add generic control.
 
 | Item | Status |
 | --- | --- |
-| Desktop/OS control behind HIGH permission + mandatory approval | NOT IMPLEMENTED |
-| Allow/deny command policies, sandboxing | NOT IMPLEMENTED |
-| Full audit trail of actions | NOT IMPLEMENTED |
+| Manual Windows compatibility/accessibility validation matrix | PLANNED |
+| Additional narrowly scoped, named workflows with risk review and deterministic postconditions | NOT IMPLEMENTED |
+| Any destructive or externally consequential computer operation (HIGH + explicit approval) | NOT IMPLEMENTED |
+| Persistent, redaction-aware audit trail (Phase 11 task/event persistence) | NOT IMPLEMENTED |
+| Browser automation, remote desktop/network control, shell/PowerShell, arbitrary code/actions | NOT IMPLEMENTED (excluded by current safety scope) |
 
-> Computer control is explicitly the **last** capability to add. Nothing in
-> earlier phases grants shell access.
+No earlier phase grants shell access or unrestricted OS control. The Phase 6
+adapter never launches processes and exposes no generic arbitrary-action tool.
 
 ---
 
@@ -317,6 +357,7 @@ The user-facing shell and durable task management.
 ## Ordering rationale
 
 The core is proven first (Phase 0) so every later capability is a *pluggable
-extension* (new tool, new provider, new agent) rather than a rewrite. Risky,
-high-privilege capabilities (browser, computer control) come late, after the
-permission/approval/verification foundation is exercised by real tools.
+extension* (new tool, new provider, new agent) rather than a rewrite. The
+bounded Phase 6 computer foundation follows the exercised permission,
+approval, and verification layers; broader browser/computer workflows remain
+separate, higher-risk work and are not enabled by this phase.

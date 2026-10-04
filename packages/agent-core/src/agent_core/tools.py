@@ -50,6 +50,10 @@ class ToolSpec(BaseModel):
     permission_level: PermissionLevel
     version: str = "1.0.0"
     deterministic: bool = True
+    # Sensitive computer observations and typed text are returned to the
+    # caller but redacted from the in-memory operational event stream.
+    sensitive_input: bool = False
+    sensitive_output: bool = False
 
 
 class ToolResult(BaseModel):

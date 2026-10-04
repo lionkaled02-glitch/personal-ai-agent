@@ -49,3 +49,8 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = "openpyxl.*"
 ignore_missing_imports = true
+
+# Windows-only computer adapter (Phase 6) uses optional, untyped platform APIs.
+[[tool.mypy.overrides]]
+module = ["pywinauto", "pywinauto.*", "win32api", "PIL", "PIL.*"]
+ignore_missing_imports = true

@@ -12,9 +12,9 @@ Every tool declares a `permission_level` on its `ToolSpec`:
 
 | Level | Meaning (intended) | Default handling |
 | --- | --- | --- |
-| `LOW` | Read-only / harmless, no side effects | `ALLOWED` automatically |
-| `MEDIUM` | Some side effects, scoped (workspace file writes/creates/copies/moves) | `REQUIRES_APPROVAL` |
-| `HIGH` | Broad or irreversible (e.g. `delete_file`; future computer control) | `REQUIRES_APPROVAL` (stricter by policy) |
+| `LOW` | Read-only/harmless operations, including bounded screen and UI observations | `ALLOWED` automatically |
+| `MEDIUM` | Scoped mutations and explicit computer interaction (mouse, focus, selection, keyboard) | `REQUIRES_APPROVAL` |
+| `HIGH` | Destructive or externally consequential actions (e.g. `delete_file`; any future high-impact computer operation) | `REQUIRES_APPROVAL` (stricter by policy) |
 
 Decisions are produced by `PermissionManager` from a data-driven
 `PermissionPolicy` (per-level decision + an explicit **deny-list** of tool
@@ -26,8 +26,11 @@ tool is ever run.
 - If a step is `REQUIRES_APPROVAL` but **no approval channel is configured**,
   the step is **denied** — never silently allowed.
 - The deny-list overrides any level policy.
-- There is **no tool with shell access today**, and none may be added without
-  a HIGH level + approval + an explicit allow/deny policy (Phase 8).
+- There is **no shell, command-execution, or arbitrary-code tool**. Phase 6
+  exposes only named, bounded computer interactions at MEDIUM permission;
+  any separately approved destructive or externally consequential action
+  would require HIGH permission and explicit approval. No generic action
+  tool or permission bypass is allowed.
 
 ### Approval flow
 
@@ -99,6 +102,10 @@ confined to the configured workspace root (`WORKSPACE_ROOT`, default
 written, or deleted through any tool. Document tools read only through that
 same boundary, and documents are untrusted *data* — their content is never
 executed or treated as instructions (see the Phase 4 subsection below).
+Phase 6 computer tools are not registered by default: the application must
+explicitly inject a `ComputerProvider` into `Agent.create_configured`. This
+provider path is local and exposes only the declared observation and
+interaction tools described below; it adds no network egress.
 
 ### Tool runtime security (Phase 2)
 
@@ -132,10 +139,11 @@ executed or treated as instructions (see the Phase 4 subsection below).
   | `json_utils` | validate/parse JSON, report shape | yes | text ≤ 100,000 chars |
 
 - **Explicitly NOT present** (forbidden, and test-verified absent):
-  unrestricted subprocess/PowerShell/cmd.exe, arbitrary Python execution,
-  arbitrary (unscoped) filesystem modification, arbitrary network requests,
-  browser/GUI automation, mouse/keyboard control, email, purchases,
-  account/security changes.
+  subprocess/PowerShell/cmd.exe, arbitrary Python execution, arbitrary
+  (unscoped) filesystem modification, arbitrary network requests, browser
+  automation, unrestricted GUI or OS control, shell/command execution, email,
+  purchases, account/security changes. Phase 6 adds only the explicit,
+  bounded Windows interactions in the computer-agent section below.
 
 ### Workspace filesystem security (Phase 3)
 
@@ -283,8 +291,11 @@ model:
 - Side-effecting tools beyond the workspace boundary (web fetch/search)
   need per-tool scoping and MEDIUM/HIGH permission levels; any process or
   shell execution would be HIGH and require an explicit policy.
-- Browser / computer control needs sandboxing, command allow/deny policies,
-  and mandatory approval (Phases 7 & 9).
+- Browser automation remains NOT IMPLEMENTED (Phase 7). Any computer
+  extension beyond Phase 6's explicit primitives needs a new threat model,
+  named tool schemas, scope-specific permission checks, and verification;
+  shell/command execution, remote desktop, arbitrary actions, and security
+  bypasses are outside this project's permitted scope.
 - Any UI/API needs authn/authz and input validation (Phase 11).
 - Vector/semantic retrieval (embeddings) and persistent memory must preserve
   the lexical-index guarantees above (deterministic, bounded, provider-
@@ -370,6 +381,84 @@ Phase 5 adds explicit memory and RAG context assembly. The security model:
   `MEMORY_MAX_CONTEXT_CHARS`) and context omission is always reported
   (`truncated`/`omitted_items`), never silent.
 
+### Safe computer agent security (Phase 6)
+
+Phase 6 adds a provider-neutral desktop foundation, not general-purpose
+computer automation. Its security boundary is:
+
+- **Explicit opt-in, closed tool set.** `Agent.create_configured` registers
+  computer tools only when given an explicit `ComputerProvider`; default
+  agents create no Windows provider and expose no computer tools. The closed
+  tool list contains six observations (`computer_screen_info`,
+  `computer_cursor_position`, `computer_active_window`,
+  `computer_list_windows`, `computer_inspect_ui`, `computer_screenshot`)
+  and eight named interactions (`computer_move_mouse`, `computer_click`,
+  `computer_double_click`, `computer_focus_window`,
+  `computer_select_ui_element`, `computer_press_key`, `computer_hotkey`,
+  `computer_type_text`). There is no generic action, script, shell, or
+  command tool.
+- **Shared fail-safe permissions.** Observations are LOW; all interactions,
+  including pointer movement, are MEDIUM and require the existing approval
+  flow by default. HIGH is reserved for destructive/external consequences
+  and unknown computer-operation names, and no such action is exposed in
+  this tool set. The existing deny-list always wins. Direct runtime/registry
+  calls enforce the same checks; the executor's authorization can be reused
+  only for the exact approved tool and never lowers a risk level.
+- **Constrained intent and target selection.** Coordinates must be within the
+  fresh observed primary-display bounds. Window focus/element selection is
+  restricted to currently visible windows; UI selection requires an observed
+  enabled/visible element with an explicit automation id. Keyboard input uses
+  an enum of supported keys and an
+  allow-list of shortcuts (no arbitrary virtual keys or Windows-key
+  shortcuts). `type_text` is literal, control-character-filtered, bounded by
+  `COMPUTER_MAX_TEXT_INPUT_CHARS`, and escaped before it reaches pywinauto.
+  Key presses, shortcuts, and text require an observed visible active window.
+  The provider has no process-launch, network, clipboard, filesystem, or
+  registry API.
+- **Observation → intent validation → permission → action → observation →
+  verification.** The runtime captures a bounded pre-action state, validates
+  the intent against observed screen/window data, checks permission, invokes
+  one named provider primitive, then captures state again. Success is reported only when an
+  explicit deterministic postcondition passes; a provider return without
+  such evidence is `unverified`, not success. Clicks, typing, key presses,
+  selection, and other non-idempotent actions are never automatically
+  retried. Only safe idempotent operations can use a small configured retry
+  budget, each after refreshing the observation. Timeout checks are
+  cooperative: synchronous OS calls cannot be forcibly interrupted, so a
+  blocked call may return after the nominal deadline.
+- **Hard caps and structured failures.** `COMPUTER_*` settings cap actions
+  per task, elapsed time, text length, screenshot bytes, windows, UI elements,
+  retries, pointer duration, and verification tolerance; hard model limits
+  cannot be raised by configuration. Provider exception details are
+  sanitized into stable error codes instead of echoing paths or UI content.
+- **Screenshots are sensitive and ephemeral.** Capture is in-memory and
+  limited by `COMPUTER_MAX_SCREENSHOT_BYTES` (hard cap 4 MiB). Screenshot
+  bytes are returned only by an explicit `computer_screenshot` request;
+  action-verification observations retain metadata/digests only. Bytes are
+  not automatically written, uploaded, attached to action history, or placed
+  in events. All computer tool outputs and the `computer_type_text` input are
+  redacted in the event stream; the explicit caller still receives its
+  requested structured result and is responsible for handling it safely.
+- **UI data is untrusted; content is not followed.** Window titles, UI names,
+  and accessibility metadata are display data, never instructions and never
+  used to change permissions or create actions. Password-control names are
+  redacted by the Windows provider. Input text is not echoed into action
+  results or operational events. Static and fake-provider tests enforce the
+  lazy platform dependency boundary, permission checks, redaction, limits,
+  verification, and safe retries.
+- **Platform isolation.** `WindowsComputerProvider` imports pywinauto, pywin32,
+  and Pillow only when explicitly constructed on Windows; core imports and
+  fake-provider tests work on other platforms. Non-Windows construction
+  raises `unsupported_platform`; missing Windows extras raise
+  `provider_unavailable`. Windows hardware behavior has not been manually
+  verified in this phase.
+- **Explicitly out of scope:** browser/Playwright, vision LLM, voice,
+  unrestricted autonomy, remote desktop/network control, shell/PowerShell/
+  subprocess, credential extraction/keylogging, persistence/stealth, security
+  or UAC bypasses, arbitrary filesystem/clipboard access, process/DLL
+  injection, registry changes, screen recording/surveillance, and automatic
+  destructive actions.
+
 ---
 
 ## 5. Reporting
@@ -410,6 +499,14 @@ issue (do not post secrets or proof-of-concept exploit details publicly).
 | Document-originated metadata not trusted as memory provenance | IMPLEMENTED |
 | Memory layer third-party import whitelist (stdlib + pydantic; no new exec/network/DB capability) | IMPLEMENTED |
 | remember events/confirmations carry metadata only (no content); all memory I/O in events bounded | IMPLEMENTED |
+| Computer provider-neutral models/runtime with strict caps; no provider auto-created | IMPLEMENTED |
+| Closed computer tool set (6 LOW observations, 8 MEDIUM interactions); no generic arbitrary-action tool | IMPLEMENTED |
+| Computer permission integration, deny-list, and fail-safe approval enforcement | IMPLEMENTED |
+| Before/after observations, explicit verification, bounded safe retry and cooperative timeout behavior | IMPLEMENTED |
+| Computer outputs and typed-text inputs redacted from events; screenshot bytes are ephemeral | IMPLEMENTED |
+| Windows dependencies are optional/lazy; unsupported platforms return structured errors | IMPLEMENTED |
+| No shell, remote control, clipboard, arbitrary filesystem, injection, stealth, or surveillance capability | IMPLEMENTED |
+| Windows hardware behavior | NOT VERIFIED (no manual desktop test) |
 | Static + behavioral verification that forbidden capabilities are absent | IMPLEMENTED |
 | Credentials via environment variables only; `Settings` secret-free; `.env` ignored; `.env.example` placeholders | IMPLEMENTED |
 | Missing-credential and unknown-provider failures are clean, no network | IMPLEMENTED |
@@ -419,5 +516,6 @@ issue (do not post secrets or proof-of-concept exploit details publicly).
 | Operational-only events/logs, bounded payloads | IMPLEMENTED |
 | Synchronous human approval channel | PLANNED (wire-up in Phase 2) |
 | Persistent, redaction-aware audit log | PLANNED (Phase 11) |
-| Sandboxing / command policies for real tools | NOT IMPLEMENTED (Phases 2/7/9) |
+| Broader, separately reviewed computer workflows | NOT IMPLEMENTED (future; explicit named operations only) |
+| Browser automation | NOT IMPLEMENTED (Phase 7) |
 | UI/API authentication | NOT IMPLEMENTED (Phase 11) |

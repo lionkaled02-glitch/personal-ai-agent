@@ -90,13 +90,17 @@ class ToolRuntime:
             )
 
         started = self._clock()
+        registered_tool = self._registry.get(invocation.tool_name)
+        sensitive_input = (
+            registered_tool.spec.sensitive_input if registered_tool is not None else False
+        )
         self._events.emit(
             EventType.TOOL_STARTED,
             task_id=invocation.task_id,
             step_id=invocation.step_id,
             data={
                 "tool_name": invocation.tool_name,
-                "input": bounded_value(invocation.input),
+                "input": {"redacted": True} if sensitive_input else bounded_value(invocation.input),
             },
         )
 
@@ -126,13 +130,19 @@ class ToolRuntime:
         result.metadata = self._metadata(invocation.tool_name, started)
 
         if result.ok:
+            current_tool = self._registry.get(invocation.tool_name)
+            sensitive_output = (
+                current_tool.spec.sensitive_output if current_tool is not None else False
+            )
             self._events.emit(
                 EventType.TOOL_COMPLETED,
                 task_id=invocation.task_id,
                 step_id=invocation.step_id,
                 data={
                     "tool_name": invocation.tool_name,
-                    "output": bounded_value(result.output),
+                    "output": {"redacted": True}
+                    if sensitive_output
+                    else bounded_value(result.output),
                 },
             )
         else:

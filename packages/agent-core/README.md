@@ -2,8 +2,9 @@
 
 The only importable package in this repository. It contains the Phase 0
 foundation, the Phase 1 model layer, the Phase 2 tool layer, the Phase 3
-workspace layer, the Phase 4 document layer, and the Phase 5 memory & RAG
-layer of the personal AI agent: task state model, planner, executor, tool
+workspace layer, the Phase 4 document layer, the Phase 5 memory & RAG layer,
+and the Phase 6 safe computer foundation of the personal AI agent: task
+state model, planner, executor, tool
 system with registry, permission manager, structured event bus, a
 vendor-neutral `ModelProvider` interface with a `ModelGateway` (error
 normalization + safe retry), a configuration-driven provider factory, a
@@ -57,6 +58,37 @@ and the **memory & RAG foundation** (Phase 5):
   chunks into a structured, bounded, provenance-labeled `Context`
   (MEMORY vs DOCUMENT items, locations, explicit omission reporting).
   Assembly only — it never generates answers.
+- **Safe Computer Agent foundation (Phase 6)** — provider-neutral
+  `ComputerProvider`, bounded observation/action models and runtime, strict
+  verification/recovery, structured events, and opt-in tool registration.
+  Six LOW observation tools and eight explicit MEDIUM interaction tools use
+  the existing permission system; there is no generic arbitrary-action tool.
+  `WindowsComputerProvider` is an optional, Windows-only UI Automation
+  adapter. UI/window text is untrusted data; screenshots and typed text are
+  sensitive and event-redacted; screenshots are bounded and never persisted
+  by the core. Timeouts are cooperative (synchronous OS calls cannot be
+  forcibly interrupted).
+
+To opt in with the Windows provider, install the extra on Windows and pass
+an explicit provider. MEDIUM interactions are denied unless the existing
+approval callback returns `True`:
+
+```bash
+pip install -e "packages/agent-core[computer-windows]"
+```
+
+```python
+from agent_core import Agent, WindowsComputerProvider
+
+agent = Agent.create_configured(
+    approval=your_approval_callback,
+    computer_provider=WindowsComputerProvider(),
+)
+```
+
+Without an explicit provider, computer tools are not registered. The core
+remains importable off Windows; constructing the Windows adapter elsewhere
+raises a structured `UnsupportedPlatformError`.
 
 ## Extras
 
@@ -65,6 +97,10 @@ and the **memory & RAG foundation** (Phase 5):
   python-docx, python-pptx, openpyxl). Without it, the binary parsers fail
   with a structured `parser_unavailable` error at parse time; TXT and
   Markdown always work.
+- `agent-core[computer-windows]` — Windows-only UI Automation dependencies
+  (pywinauto, pywin32, Pillow), installed only on Windows. The module remains
+  importable without this extra; provider construction then raises a
+  structured `provider_unavailable` error.
 
 - Architecture: see [`ARCHITECTURE.md`](../../ARCHITECTURE.md)
 - Engineering rules: see [`AGENTS.md`](../../AGENTS.md)

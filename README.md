@@ -38,11 +38,23 @@ This repository currently contains:
   Memory creation is explicit (never automatic); memory and document content
   is untrusted data, never instructions. Retrieval is lexical only — no
   embeddings in this phase.
+- **Phase 6: safe Windows Computer Agent foundation** — a provider-neutral,
+  bounded computer-provider interface and an optional Windows UI Automation
+  adapter. Six explicit LOW observation tools and eight named MEDIUM
+  interaction tools are registered only when a provider is explicitly
+  supplied. Every interaction uses the existing fail-safe permission system,
+  re-observes and verifies deterministic postconditions, and returns
+  structured results; non-idempotent actions are not automatically retried.
+  UI/window content is untrusted, sensitive input/output is redacted from
+  events, screenshots are bounded and ephemeral. This is not unrestricted
+  autonomous control; browser, shell, arbitrary action, remote control, and
+  destructive capabilities are not included.
 
 Everything else (tools beyond the workspace boundary, web access, browser,
-computer control, voice, media, document/presentation generation, durable
-(persisted) memory, vector/semantic retrieval, and a user interface) is
-deliberately NOT IMPLEMENTED yet.
+voice, media, document/presentation generation, durable (persisted) memory,
+vector/semantic retrieval, and a user interface) is deliberately NOT
+IMPLEMENTED yet. Broader computer automation beyond the Phase 6 foundation
+is also not implemented.
 
 > See [ROADMAP.md](ROADMAP.md) and [ARCHITECTURE.md](ARCHITECTURE.md) for
 > exactly what exists and what does not.
@@ -156,6 +168,18 @@ A single Python package, `agent-core`, that proves the architecture works:
   `MEMORY_MAX_CONTEXT_ITEMS`, `MEMORY_SHORT_TERM_TTL_S`,
   `MEMORY_WORKING_TTL_S`. See SECURITY.md for the trust model and
   ARCHITECTURE.md (D18/D19) for the design decisions.
+- **Safe Computer Agent foundation (Phase 6)** — `ComputerProvider` protocol;
+  strict bounded screen/cursor/window/UI/screenshot and mouse/keyboard models;
+  six LOW observation tools and eight MEDIUM interaction tools; the default
+  `PermissionManager` approval/deny behavior; deterministic before/after
+  verification, structured action events/results, bounded idempotent retries,
+  cooperative timeouts, and `COMPUTER_*` limits. `WindowsComputerProvider`
+  lazily imports the optional `computer-windows` extra on Windows and raises a
+  structured `unsupported_platform` error elsewhere. Use
+  `Agent.create_configured(computer_provider=...)` to opt in; no provider or
+  computer tools are created automatically. Screen captures and UI metadata
+  are sensitive, caller-requested results and are redacted from events.
+  There is no generic arbitrary-action tool.
 - **One mock tool** (`demo_tool`) used for the end-to-end tests.
 
 The **first end-to-end flow** is implemented and tested:
@@ -197,6 +221,8 @@ User Request → Agent → Planner → Tool Registry → Mock Tool → Result �
 │       │   │                    #   limits, secret guard (Phase 5)
 │       │   ├── memory_tools/    # remember/recall/update/forget/list tools (Phase 5)
 │       │   ├── rag/             # ContextBuilder: bounded memory+document context
+│       │   ├── computer/        # provider-neutral computer runtime + Windows adapter (Phase 6)
+│       │   ├── computer_tools/  # explicit observation/action tool registry (Phase 6)
 │       │   ├── tool_runtime.py  # ToolRuntime (permission-gated execution)
 │       │   ├── errors.py        # exception hierarchy
 │       │   └── providers/
@@ -228,9 +254,11 @@ python3 -m venv .venv
 source .venv/bin/activate
 
 # 2. Install the core (editable) plus dev tools
-#    (add [openai] only if you will use a real OpenAI model)
+#    (add [openai] only for a real OpenAI model; on Windows only, add
+#    [computer-windows] to explicitly use the optional desktop provider)
 pip install -e packages/agent-core
 pip install pytest ruff mypy
+# Optional, Windows-only: pip install -e "packages/agent-core[computer-windows]"
 
 # 3. Run the test suite (offline, deterministic — no API keys needed)
 pytest
@@ -290,7 +318,8 @@ semantic/vector retrieval (the Phase 4 document and Phase 5 memory
 retrieval are lexical by design and swappable via the `RetrievalIndex` and
 `MemoryRetriever` protocols), durable (persisted) memory beyond the
 process lifetime, tools that leave the workspace boundary (web fetch/search,
-shell/command execution), computer control, browser automation, voice,
-image/video generation, presentation/document generation, and a user
-interface are all **future phases**. Adding them is explicitly gated in
-[ROADMAP.md](ROADMAP.md).
+shell/command execution), browser automation, voice, image/video generation,
+presentation/document generation, and a user interface are all **future
+phases**. The Phase 6 computer tools are a bounded, explicit Windows
+foundation only; broader or autonomous computer control remains unimplemented.
+Adding new capabilities is explicitly gated in [ROADMAP.md](ROADMAP.md).

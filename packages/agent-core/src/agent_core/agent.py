@@ -16,6 +16,8 @@ import uuid
 from pathlib import Path
 
 from .builtin_tools import register_default_tools
+from .computer import ComputerLimits, ComputerProvider, ComputerRuntime
+from .computer_tools import register_computer_tools
 from .config import Settings
 from .document_tools import register_document_tools
 from .documents.limits import DocumentLimits
@@ -131,6 +133,7 @@ class Agent:
         approval: ApprovalCallback | None = None,
         clock: Clock | None = None,
         gateway: ModelGateway | None = None,
+        computer_provider: ComputerProvider | None = None,
     ) -> Agent:
         """An agent wired from configuration (Phase 1).
 
@@ -146,7 +149,9 @@ class Agent:
         the Phase 4 document tools bound to the same boundary and an
         in-memory knowledge store whose limits come from the settings, and
         the Phase 5 memory tools bound to an in-memory memory store whose
-        limits also come from the settings.
+        limits also come from the settings. Computer tools are registered
+        only when an explicit provider is passed; those tools use the same
+        permission manager and event bus, with limits from ``COMPUTER_*``.
         """
         resolved = settings if settings is not None else Settings.from_env()
         if gateway is None:
@@ -159,11 +164,22 @@ class Agent:
         register_document_tools(registry, workspace, store)
         memory = InMemoryMemoryStore(MemoryLimits.from_settings(resolved), clock=clock)
         register_memory_tools(registry, memory, clock=clock)
+        permissions = PermissionManager(approval=approval)
+        events = EventBus(clock=clock)
+        if computer_provider is not None:
+            computer_runtime = ComputerRuntime(
+                provider=computer_provider,
+                permissions=permissions,
+                events=events,
+                limits=ComputerLimits.from_settings(resolved),
+                clock=clock,
+            )
+            register_computer_tools(registry, computer_runtime)
         return cls(
             planner=ModelPlanner(gateway),
             registry=registry,
-            permissions=PermissionManager(approval=approval),
-            events=EventBus(clock=clock),
+            permissions=permissions,
+            events=events,
             verifier=BasicVerifier(),
             clock=clock,
             knowledge_store=store,

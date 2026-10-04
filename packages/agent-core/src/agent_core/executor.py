@@ -28,7 +28,12 @@ from .errors import (
     ToolNotFoundError,
 )
 from .events import Clock, EventBus, EventType, utc_now
-from .permissions import ApprovalRequest, PermissionDecision, PermissionManager
+from .permissions import (
+    ApprovalRequest,
+    PermissionDecision,
+    PermissionManager,
+    _permission_authorization_scope,
+)
 from .tasks import StepStatus, Task, TaskState, TaskStep
 from .tool_runtime import ToolInvocation, ToolRuntime
 from .tools import ToolRegistry
@@ -173,7 +178,15 @@ class Executor:
         try:
             # The runtime re-checks the decision (backstop) and emits the
             # tool lifecycle events (started / completed / failed / invalid).
-            result = self._runtime.execute(invocation, decision=PermissionDecision.ALLOWED)
+            # The scoped authorization also lets nested computer operations
+            # reuse this completed check without requesting approval twice.
+            with _permission_authorization_scope(
+                task_id=task.id,
+                step_id=step.id,
+                tool_name=tool.spec.name,
+                permission_level=tool.spec.permission_level,
+            ):
+                result = self._runtime.execute(invocation, decision=PermissionDecision.ALLOWED)
         except PermissionDeniedError as exc:
             # Unreachable via this path (we only pass ALLOWED); treated as a
             # denial so no code path can execute an unapproved tool.

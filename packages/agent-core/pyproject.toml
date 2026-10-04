@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agent-core"
-version = "0.6.0"
-description = "Core abstractions for a modular personal autonomous AI agent: tasks, planner, executor, tools, permissions, events, model gateway, model providers, workspace filesystem boundary, document processing & lexical knowledge retrieval."
+version = "0.7.0"
+description = "Core abstractions for a modular personal autonomous AI agent: tasks, planner, executor, permissioned tools, model providers, workspace, document and memory retrieval, and safe computer interaction."
 readme = "README.md"
 requires-python = ">=3.11"
 # Deliberately minimal: the core must not depend on any vendor SDK or
@@ -24,6 +24,13 @@ docs = [
     "python-docx>=1.0,<2",
     "python-pptx>=1.0,<2",
     "openpyxl>=3.1,<4",
+]
+# Windows computer-control adapter (Phase 6). Imported only after explicit
+# provider construction on Windows; core/fake-provider tests need no extra.
+computer-windows = [
+    "pywinauto>=0.6.9,<0.7; platform_system == 'Windows'",
+    "pywin32>=306,<312; platform_system == 'Windows'",
+    "Pillow>=10,<13; platform_system == 'Windows'",
 ]
 
 [tool.hatch.build.targets.wheel]
