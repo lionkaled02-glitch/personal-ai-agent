@@ -408,11 +408,12 @@ installation and CI do not import Playwright or require browser binaries.
 
 ---
 
-## Phase 10 — Coding Agent Foundation (Step 1) ✅ IMPLEMENTED
+## Phase 10 — Coding Agent Foundation (Steps 1–2) ✅ IMPLEMENTED
 
-This step establishes bounded provider-neutral data contracts only. Code and
-repository text are untrusted data; paths use the existing `Workspace`
-containment/symlink boundary. The deterministic mock is offline.
+Step 1 establishes bounded provider-neutral contracts; Step 2 adds a local,
+read-only analyzer. Code and repository text are untrusted data, paths use the
+existing `Workspace` containment/symlink boundary, and the deterministic mock
+and analysis runtime make no network requests.
 
 | Item | Status |
 | --- | --- |
@@ -420,20 +421,24 @@ containment/symlink boundary. The deterministic mock is offline.
 | `CodingProvider`, hard-clamped `CodingLimits`, safe errors, and deterministic mock | IMPLEMENTED |
 | Workspace-backed path resolution, project containment, original-hash patch preconditions | IMPLEMENTED |
 | `CODING_*` environment configuration and bounded output/result validation | IMPLEMENTED |
-| Coding runtime/tools, source writes or patch application | NOT IMPLEMENTED (outside Step 1) |
-| Shell/process/command use, arbitrary execution, compilers, package installation, test/build execution, real model providers | NOT IMPLEMENTED (explicitly excluded) |
+| Read-only `CodingAnalysisRuntime`; bounded discovery, UTF-8 snapshots, Python AST, shallow JS/TS scan, metadata-only formats | IMPLEMENTED |
+| Explicit analyzed/skipped file metadata, truncation reasons, and file/entry/output bounds | IMPLEMENTED |
+| Coding tools, source writes, patch application, test/build execution | NOT IMPLEMENTED (outside Steps 1–2) |
+| Shell/process/command use, arbitrary execution, compilers, package installation, real model providers | NOT IMPLEMENTED (explicitly excluded) |
 
 **Acceptance:** proposed replacements remain structured data and are checked
 against the supplied source hash/size; the mock never accesses or modifies
-workspace paths; test plans cannot report execution; configured limits reject
-oversized input and output; project/file targets are resolved by `Workspace` and constrained
-to the project root. No earlier phase grants command or arbitrary-code access.
+workspace paths; analysis reads only validated project files and reports
+bounded symbols, diagnostics, skipped files, and truncation; test plans cannot
+report execution; configured input and output limits remain enforced. No phase
+grants command or arbitrary-code access.
 
-**Known limitation:** Step 1 has no coding runtime to load workspace files,
-measure provider wall-clock time, enforce permissions on a write, or apply a
-patch. Analysis-time bounds validate reported elapsed time only. A later write
-path must use the existing permission system and revalidate the patch against
-the live workspace.
+**Known limitation:** analysis uses cooperative wall-clock checks around
+synchronous reads/parsers; a single bounded operation cannot be forcibly
+interrupted. The runtime never writes files, applies patches, launches
+commands, installs packages, executes builds/tests, or connects a real model.
+Any future write path must be a separate operation, use the existing
+permission system, and revalidate the patch against the live workspace.
 
 ---
 

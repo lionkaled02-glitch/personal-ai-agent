@@ -26,7 +26,8 @@ supplied — never the absolute host path or other filesystem details.
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
+import stat
+from collections.abc import Collection, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -134,24 +135,111 @@ class Workspace:
         rel = resolved.relative_to(self._root)
         return "" if rel == Path(".") else rel.as_posix()
 
-    def walk_files(self, top: Path, max_depth: int | None = None) -> Iterator[Path]:
-        """Deterministic walk of files under ``top`` (already inside the
-        workspace). Does NOT follow directory symlinks.
+    def walk_files(
+        self,
+        top: Path,
+        max_depth: int | None = None,
+        *,
+        skip_directories: Collection[str] = (),
+        max_files: int | None = None,
+        max_entries: int | None = None,
+    ) -> Iterator[Path]:
+        """Deterministically walk regular directory trees inside this workspace.
+
+        Directory symlinks and reparse points are pruned before descent.
+        ``skip_directories`` matches child directory names case-insensitively;
+        the explicitly selected ``top`` directory is never skipped. ``max_files``
+        bounds yielded file entries (use one extra sentinel to detect overflow).
+        ``max_entries`` bounds discovered child directory/file entries and raises
+        a safe ``WorkspaceError`` if traversal would exceed that budget.
 
         ``max_depth`` bounds how far below ``top`` to descend (1 = files
-        directly in ``top`` only); ``None`` walks the whole subtree.
+        directly in ``top`` only); ``None`` walks the whole subtree. Every
+        yielded path remains under the canonical ``top`` boundary.
         """
-        base = top
-        for dirpath, dirnames, filenames in os.walk(base, topdown=True, followlinks=False):
-            depth = len(Path(dirpath).relative_to(base).parts)
+        if max_files is not None and max_files < 0:
+            raise ValueError("max_files must be non-negative")
+        if max_entries is not None and max_entries < 0:
+            raise ValueError("max_entries must be non-negative")
+        if max_files == 0:
+            return
+        try:
+            base = top.resolve()
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise WorkspaceError(
+                "security_violation",
+                "directory could not be safely resolved",
+            ) from exc
+        if base != self._root and self._root not in base.parents:
+            raise WorkspaceError("path_outside_workspace", "directory resolves outside workspace")
+
+        excluded = {name.casefold() for name in skip_directories}
+        yielded = 0
+        discovered_entries = 0
+
+        def fail_walk(error: OSError) -> None:
+            raise WorkspaceError("filesystem_error", "workspace traversal failed") from error
+
+        for dirpath, dirnames, filenames in os.walk(
+            base,
+            topdown=True,
+            onerror=fail_walk,
+            followlinks=False,
+        ):
+            current = Path(dirpath)
+            discovered_entries += len(dirnames) + len(filenames)
+            if max_entries is not None and discovered_entries > max_entries:
+                raise WorkspaceError(
+                    "traversal_limit",
+                    "workspace traversal exceeded its configured entry limit",
+                )
+            depth = len(current.relative_to(base).parts)
             if max_depth is not None:
                 if depth + 1 >= max_depth:
                     dirnames[:] = []  # do not descend further
                 if depth >= max_depth:
                     continue
-            dirnames.sort()
+
+            safe_directories: list[str] = []
+            for name in sorted(dirnames):
+                if name.casefold() in excluded:
+                    continue
+                child = current / name
+                if _is_link_or_reparse_point(child):
+                    continue
+                try:
+                    resolved = child.resolve()
+                except (OSError, RuntimeError, ValueError):
+                    continue
+                if resolved != base and base not in resolved.parents:
+                    continue
+                safe_directories.append(name)
+            dirnames[:] = safe_directories
+
             for name in sorted(filenames):
-                yield Path(dirpath) / name
+                yield current / name
+                yielded += 1
+                if max_files is not None and yielded >= max_files:
+                    return
+
+
+def _is_link_or_reparse_point(path: Path) -> bool:
+    """Fail closed for directory links before a recursive walk descends."""
+    try:
+        entry_stat = path.lstat()
+    except OSError:
+        return True
+    if stat.S_ISLNK(entry_stat.st_mode):
+        return True
+    is_junction = getattr(os.path, "isjunction", None)
+    if callable(is_junction):
+        try:
+            if is_junction(path):
+                return True
+        except OSError:
+            return True
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    return bool(getattr(entry_stat, "st_file_attributes", 0) & reparse_flag)
 
 
 def _is_windows_absolute(path: str) -> bool:

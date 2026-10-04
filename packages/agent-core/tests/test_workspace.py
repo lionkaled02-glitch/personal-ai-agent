@@ -186,6 +186,29 @@ class TestSymlinkEscapes:
         assert all(p == ws.root / "link.txt" or ws.root in p.parents for p in walked)
         assert not any("secret.txt" in p.name for p in walked)
 
+    def test_walk_files_applies_directory_exclusions_and_file_cap(self, root: Path) -> None:
+        (root / "src").mkdir()
+        (root / "vendor").mkdir()
+        (root / "src" / "a.py").write_text("a = 1", encoding="utf-8")
+        (root / "src" / "b.py").write_text("b = 2", encoding="utf-8")
+        (root / "vendor" / "ignored.py").write_text("x = 3", encoding="utf-8")
+        ws = Workspace(root)
+
+        walked = list(ws.walk_files(root, skip_directories={"VENDOR"}, max_files=1))
+
+        assert len(walked) == 1
+        assert walked[0].parent == root / "src"
+
+    def test_walk_files_fails_closed_when_entry_budget_is_exceeded(self, root: Path) -> None:
+        (root / "one").mkdir()
+        (root / "two").mkdir()
+        ws = Workspace(root)
+
+        with pytest.raises(WorkspaceError) as exc:
+            list(ws.walk_files(root, max_entries=1))
+
+        assert exc.value.code == "traversal_limit"
+
 
 class TestLimitsConfig:
     def test_custom_limits(self, root: Path) -> None:

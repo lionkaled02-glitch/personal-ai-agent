@@ -116,6 +116,8 @@ class CodingLimits(CodingModel):
             raise CodingLimitError()
         if len(result.diagnostics) > self.max_diagnostics:
             raise CodingLimitError()
+        if len(result.analyzed_files) + len(result.skipped_files) > self.max_project_files:
+            raise CodingLimitError()
         region_count = sum(symbol.region is not None for symbol in result.symbols)
         region_count += sum(diagnostic.region is not None for diagnostic in result.diagnostics)
         if region_count > self.max_regions:

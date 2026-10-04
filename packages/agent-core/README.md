@@ -110,14 +110,19 @@ and the **memory & RAG foundation** (Phase 5):
   is untrusted data, never instructions. This is not unrestricted autonomous
   browsing, CAPTCHA/anti-bot bypass, credential harvesting, arbitrary
   JavaScript, or profile reuse.
-- **Coding Agent core foundation (Phase 10, Step 1)** — `agent_core.coding`
+- **Coding Agent core foundation (Phase 10, Steps 1–2)** — `agent_core.coding`
   provides strict bounded project/file/region, analysis, structural patch,
   test-plan, and metadata-only observation models; a provider-neutral
   `CodingProvider`; `CODING_*` limits; content-safe errors; and an offline
-  deterministic mock. Resolve paths through the existing `Workspace` before
-  use. Changes are proposals only: this step adds no file writes, commands,
-  compilers, package installation, test/build execution, tools/runtime, or
-  real model integration. Repository and provider text remain untrusted data.
+  deterministic mock. `CodingAnalysisRuntime` adds bounded, read-only project
+  discovery through the existing `Workspace`: Python is parsed to an AST
+  without execution, JavaScript/TypeScript receive a shallow line scan, and
+  JSON/TOML/Markdown/YAML produce metadata only. Skipped files and truncation
+  reasons are explicit, and the runtime uses the existing LOW analysis
+  permission convention. Repository/config/source text remains untrusted data.
+  No patch is applied; Step 2 adds no shell/process, compiler/build/test
+  execution, package installation, arbitrary code execution, automatic writes,
+  network requests, or real-provider integration.
 
 To opt in with the Windows provider, install the extra on Windows and pass
 an explicit provider. MEDIUM interactions are denied unless the existing

@@ -16,9 +16,9 @@ Two complementary guards:
    secret-like content atomically; expired memories are excluded; nothing is
    auto-persisted from conversation; memory operations respect the
    permission system.
-4. **Coding foundation (Phase 10, Step 1)**: the coding package is offline
-   data/proposal planning only, resolves paths through `Workspace`, and has
-   no write, command, network, compiler, or test-execution capability.
+4. **Coding foundation (Phase 10, Steps 1-2)**: the coding package is offline
+   data/proposal planning plus bounded read-only analysis through `Workspace`;
+   it has no write, command, network, compiler, or test-execution capability.
 
 These tests run fully offline.
 """
@@ -223,7 +223,7 @@ class TestStaticSourceBoundaries:
         assert offenders == [], f"unsafe computer dependency boundary: {offenders}"
 
     def test_coding_layer_is_offline_data_only_and_has_no_write_or_execution_api(self) -> None:
-        """Phase 10 Step 1 introduces data contracts, not a code runner."""
+        """Phase 10 Step 2 permits only bounded read-only Workspace snapshots."""
         import sys
 
         coding_root = SRC / "coding"
@@ -280,7 +280,29 @@ class TestStaticSourceBoundaries:
                         if isinstance(function, ast.Attribute)
                         else ""
                     )
-                    if called_name in forbidden_calls:
+                    is_bounded_workspace_read = (
+                        path.name == "runtime.py"
+                        and called_name == "open"
+                        and isinstance(function, ast.Attribute)
+                        and isinstance(function.value, ast.Name)
+                        and function.value.id == "resolved"
+                        and len(node.args) == 1
+                        and isinstance(node.args[0], ast.Constant)
+                        and node.args[0].value == "rb"
+                        and not node.keywords
+                    )
+                    is_fixed_regex_compile = (
+                        path.name == "runtime.py"
+                        and called_name == "compile"
+                        and isinstance(function, ast.Attribute)
+                        and isinstance(function.value, ast.Name)
+                        and function.value.id == "re"
+                    )
+                    if (
+                        called_name in forbidden_calls
+                        and not is_bounded_workspace_read
+                        and not is_fixed_regex_compile
+                    ):
                         offenders.append(f"{path.name}: call {called_name}")
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in {
                     "run_code",

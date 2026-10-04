@@ -212,12 +212,19 @@ class DiagnosticSeverity(StrEnum):
 
 
 class CodeDiagnostic(CodingModel):
-    """A bounded provider diagnostic; its message remains untrusted output."""
+    """A bounded diagnostic; its message remains untrusted output."""
 
     code: str = Field(min_length=1, max_length=64, pattern=_IDENTIFIER_PATTERN, strict=True)
     severity: DiagnosticSeverity
     message: str = Field(min_length=1, max_length=4_096, strict=True, repr=False)
+    path: str | None = Field(default=None, max_length=MAX_CODING_PATH_CHARS, strict=True)
     region: CodeRegion | None = None
+
+    @model_validator(mode="after")
+    def validate_path_region(self) -> CodeDiagnostic:
+        if self.path is not None and self.region is not None and self.path != self.region.path:
+            raise ValueError("diagnostic path and region path do not match")
+        return self
 
 
 class ObservedCodeFile(CodingModel):
@@ -237,6 +244,83 @@ class ObservedCodeFile(CodingModel):
             source_chars=len(source.content),
             source_sha256=source.source_sha256,
         )
+
+
+class CodeLanguage(StrEnum):
+    """Deterministic file classifications supported by local analysis."""
+
+    PYTHON = "python"
+    JAVASCRIPT = "javascript"
+    TYPESCRIPT = "typescript"
+    JSON = "json"
+    YAML = "yaml"
+    TOML = "toml"
+    MARKDOWN = "markdown"
+    HTML = "html"
+    CSS = "css"
+    TEXT = "text"
+
+
+class CodeAnalysisMethod(StrEnum):
+    """The shallow, non-executing method used for one file."""
+
+    PYTHON_AST = "python_ast"
+    ECMASCRIPT_LINE_SCAN = "ecmascript_line_scan"
+    METADATA_ONLY = "metadata_only"
+
+
+class CodeSkipReason(StrEnum):
+    """Stable reasons a discovered file was not included as source text."""
+
+    UNSUPPORTED_FILE_TYPE = "unsupported_file_type"
+    SENSITIVE_FILE_NAME = "sensitive_file_name"
+    FILE_TOO_LARGE = "file_too_large"
+    SOURCE_LIMIT_EXCEEDED = "source_limit_exceeded"
+    DECODE_FAILED = "decode_failed"
+    BINARY_FILE = "binary_file"
+    UNSAFE_PATH = "unsafe_path"
+    NOT_REGULAR_FILE = "not_regular_file"
+    READ_FAILED = "read_failed"
+    DUPLICATE_PATH = "duplicate_path"
+
+
+class CodeAnalysisLimitReason(StrEnum):
+    """Explicit limits that caused deterministic analysis truncation."""
+
+    PROJECT_FILE_LIMIT = "project_file_limit"
+    DISCOVERY_ENTRY_LIMIT = "discovery_entry_limit"
+    FILE_SIZE_LIMIT = "file_size_limit"
+    SOURCE_CHAR_LIMIT = "source_char_limit"
+    SYMBOL_LIMIT = "symbol_limit"
+    REGION_LIMIT = "region_limit"
+    DIAGNOSTIC_LIMIT = "diagnostic_limit"
+    ANALYSIS_TIME_LIMIT = "analysis_time_limit"
+    OUTPUT_LIMIT = "output_limit"
+
+
+class CodeFileMetric(CodingModel):
+    """Small numeric metadata; metric names come from runtime constants."""
+
+    name: str = Field(min_length=1, max_length=64, pattern=_IDENTIFIER_PATTERN, strict=True)
+    value: int = Field(ge=0, le=MAX_CODING_FILE_CHARS, strict=True)
+
+
+class AnalyzedCodeFile(ObservedCodeFile):
+    """Content-free classification and counts for one analyzed source file."""
+
+    language: CodeLanguage
+    method: CodeAnalysisMethod
+    line_count: int = Field(ge=0, le=MAX_CODING_FILE_CHARS, strict=True)
+    metrics: tuple[CodeFileMetric, ...] = Field(default=(), max_length=8)
+
+
+class SkippedCodeFile(CodingModel):
+    """Bounded path/size metadata for a discovered file that was not read."""
+
+    path: str = Field(min_length=1, max_length=MAX_CODING_PATH_CHARS, strict=True)
+    reason: CodeSkipReason
+    language: CodeLanguage | None = None
+    size_bytes: int | None = Field(default=None, ge=0, le=(1 << 63) - 1, strict=True)
 
 
 class CodingObservation(CodingModel):
@@ -308,7 +392,7 @@ class CodeAnalysisStatus(StrEnum):
 
 
 class CodeAnalysisResult(CodingModel):
-    """Bounded analysis output; provider text and claims are not trusted."""
+    """Bounded deterministic or provider-produced analysis facts."""
 
     project_id: str = Field(min_length=1, max_length=64, pattern=_PROJECT_ID_PATTERN, strict=True)
     status: CodeAnalysisStatus
@@ -322,23 +406,80 @@ class CodeAnalysisResult(CodingModel):
         strict=True,
     )
     observation: CodingObservation
+    analyzed_files: tuple[AnalyzedCodeFile, ...] = Field(
+        default=(),
+        max_length=MAX_CODING_PROJECT_FILES,
+    )
+    skipped_files: tuple[SkippedCodeFile, ...] = Field(
+        default=(),
+        max_length=MAX_CODING_PROJECT_FILES,
+    )
+    truncated: bool = False
+    limit_reasons: tuple[CodeAnalysisLimitReason, ...] = Field(default=(), max_length=9)
 
     @model_validator(mode="after")
-    def validate_observation_project(self) -> CodeAnalysisResult:
+    def validate_result_shape(self) -> CodeAnalysisResult:
         if self.observation.project_id != self.project_id:
             raise ValueError("analysis observation belongs to a different project")
+        analyzed_paths = [item.path for item in self.analyzed_files]
+        skipped_paths = [item.path for item in self.skipped_files]
+        if len(analyzed_paths) != len(set(analyzed_paths)):
+            raise ValueError("analysis contains duplicate analyzed file paths")
+        if len(skipped_paths) != len(set(skipped_paths)):
+            raise ValueError("analysis contains duplicate skipped file paths")
+        if set(analyzed_paths) & set(skipped_paths):
+            raise ValueError("a file cannot be both analyzed and skipped")
+        if len(analyzed_paths) + len(skipped_paths) > MAX_CODING_PROJECT_FILES:
+            raise ValueError("analysis file metadata exceeds the hard project file limit")
+        if self.analyzed_files:
+            observed = {item.path: item for item in self.observation.files}
+            if set(observed) != set(analyzed_paths):
+                raise ValueError("analyzed file metadata does not match the observation")
+            for item in self.analyzed_files:
+                snapshot = observed[item.path]
+                if (
+                    item.size_bytes != snapshot.size_bytes
+                    or item.source_chars != snapshot.source_chars
+                    or item.source_sha256 != snapshot.source_sha256
+                ):
+                    raise ValueError("analyzed file metadata does not match its observation")
+        if len(self.limit_reasons) != len(set(self.limit_reasons)):
+            raise ValueError("analysis contains duplicate limit reasons")
+        if self.truncated != bool(self.limit_reasons):
+            raise ValueError("truncation flag and limit reasons do not match")
+        if self.status is CodeAnalysisStatus.COMPLETE and (self.skipped_files or self.truncated):
+            raise ValueError("a partial analysis cannot be marked complete")
+        if self.truncated and self.status is not CodeAnalysisStatus.PARTIAL:
+            raise ValueError("a truncated analysis must be marked partial")
         return self
 
     def validate_workspace(self, project: CodingProject, workspace: Workspace) -> None:
-        """Recheck provider-returned file/region paths against the live workspace."""
+        """Recheck returned paths against the canonical workspace/project boundary."""
         if project.project_id != self.project_id:
             raise CodingWorkspaceError()
         observed_paths = set(self.observation.validate_workspace(project, workspace))
+        safe_skipped_paths: set[str] = set()
+        unsafe_skipped_paths = {
+            item.path for item in self.skipped_files if item.reason is CodeSkipReason.UNSAFE_PATH
+        }
+        for skipped_file in self.skipped_files:
+            if skipped_file.reason is CodeSkipReason.UNSAFE_PATH:
+                continue
+            resolved = project.resolve_file_path(workspace, skipped_file.path)
+            safe_skipped_paths.add(resolved)
+        for analyzed_file in self.analyzed_files:
+            resolved = project.resolve_file_path(workspace, analyzed_file.path)
+            if resolved not in observed_paths:
+                raise CodingWorkspaceError()
         for symbol in self.symbols:
             resolved = project.resolve_file_path(workspace, symbol.region.path)
             if resolved not in observed_paths:
                 raise CodingWorkspaceError()
         for diagnostic in self.diagnostics:
+            if diagnostic.path is not None and diagnostic.path not in unsafe_skipped_paths:
+                resolved = project.resolve_file_path(workspace, diagnostic.path)
+                if resolved not in observed_paths | safe_skipped_paths:
+                    raise CodingWorkspaceError()
             if diagnostic.region is not None:
                 resolved = project.resolve_file_path(workspace, diagnostic.region.path)
                 if resolved not in observed_paths:

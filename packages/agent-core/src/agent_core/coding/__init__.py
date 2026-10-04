@@ -1,8 +1,9 @@
-"""Phase 10 Step 1: bounded, provider-neutral coding data contracts.
+"""Phase 10 coding foundation: bounded data contracts and read-only analysis.
 
-Only in-memory analysis, edit proposals, and test plans are represented. The
-package adds no coding runtime, file writes, command execution, or real model
-provider. Resolve all project/file paths through the existing ``Workspace``.
+The local analysis runtime reads validated workspace files and returns bounded
+facts only. Edit proposals and test plans remain data; this package adds no
+file writes, code execution, command runner, or real model provider. Resolve
+all project/file paths through the existing ``Workspace``.
 """
 
 from .errors import (
@@ -19,6 +20,9 @@ from .interfaces import CodingOperation, CodingProvider
 from .limits import CodingLimits
 from .mock import MockCodingProvider
 from .models import (
+    AnalyzedCodeFile,
+    CodeAnalysisLimitReason,
+    CodeAnalysisMethod,
     CodeAnalysisRequest,
     CodeAnalysisResult,
     CodeAnalysisStatus,
@@ -28,8 +32,11 @@ from .models import (
     CodeEditResult,
     CodeEditStatus,
     CodeFile,
+    CodeFileMetric,
+    CodeLanguage,
     CodePatch,
     CodeRegion,
+    CodeSkipReason,
     CodeSymbol,
     CodeSymbolKind,
     CodeTestPlanRequest,
@@ -43,10 +50,15 @@ from .models import (
     PatchValidationCheck,
     PatchValidationMetadata,
     PatchValidationStatus,
+    SkippedCodeFile,
     TestCasePlan,
 )
+from .runtime import CodingAnalysisRuntime
 
 __all__ = [
+    "AnalyzedCodeFile",
+    "CodeAnalysisLimitReason",
+    "CodeAnalysisMethod",
     "CodeAnalysisRequest",
     "CodeAnalysisResult",
     "CodeAnalysisStatus",
@@ -56,13 +68,17 @@ __all__ = [
     "CodeEditResult",
     "CodeEditStatus",
     "CodeFile",
+    "CodeFileMetric",
+    "CodeLanguage",
     "CodePatch",
     "CodeRegion",
+    "CodeSkipReason",
     "CodeSymbol",
     "CodeSymbolKind",
     "CodeTestPlanRequest",
     "CodeTestPlanResult",
     "CodeTestPlanStatus",
+    "CodingAnalysisRuntime",
     "CodingError",
     "CodingLimitError",
     "CodingLimits",
@@ -83,5 +99,6 @@ __all__ = [
     "PatchValidationCheck",
     "PatchValidationMetadata",
     "PatchValidationStatus",
+    "SkippedCodeFile",
     "TestCasePlan",
 ]

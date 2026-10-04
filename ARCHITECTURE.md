@@ -250,7 +250,7 @@ ordinary CI uses only the mock provider (no internet or browser binary).
 Unrestricted autonomous browsing, CAPTCHA/anti-bot bypass, credential
 harvesting, and authenticated profile reuse are not provided.
 
-### Coding foundation (Phase 10, Step 1 — IMPLEMENTED)
+### Coding foundation (Phase 10, Steps 1–2 — IMPLEMENTED)
 
 `agent_core.coding` defines bounded project/file/region, analysis, edit-proposal,
 test-plan, patch, and metadata-only observation models; `CodingProvider`;
@@ -258,15 +258,25 @@ test-plan, patch, and metadata-only observation models; `CodingProvider`;
 deterministic offline mock. All workspace-relative paths are checked through
 the existing `Workspace.resolve()` boundary and then constrained to the
 resolved project root. Proposed full-file replacements carry the original
-SHA-256 and size as preconditions. The patch validation record is advisory and is not
-trusted as proof.
+SHA-256 and size as preconditions. The patch validation record is advisory and
+is not trusted as proof.
 
-This step has no coding runtime or registered tools. It does not write/apply
-patches, run tests/builds/compilers, install packages, launch commands, access
-the network, or connect a real model. Test plans carry no executable command
-and always report `execution_performed=False`. The configured analysis-time
-bound can validate reported elapsed time; actual wall-clock enforcement awaits
-a later runtime. Future writes must use the existing permission system.
+Step 1 supplies only the data contracts and mock. Step 2 adds
+`CodingAnalysisRuntime`, a read-only local analyzer that discovers bounded
+project files through `Workspace`, excludes generated/vendor and sensitive-name
+paths, and validates each candidate before opening it. Python is parsed to an
+AST without execution; JavaScript/TypeScript receive a shallow line scan; JSON,
+TOML, YAML, Markdown, and other supported text formats are metadata-only.
+Results report analyzed/skipped paths and explicit truncation reasons without
+returning source contents. The runtime is offline and carries the existing LOW
+`coding_analyze` permission descriptor; it registers no tools.
+
+Steps 1–2 do not write/apply patches, run tests/builds/compilers, install
+packages, launch commands, access the network, or connect a real model. Test
+plans carry no executable command and always report
+`execution_performed=False`. Step 2 applies cooperative elapsed-time checks;
+a single synchronous read/parser call cannot be forcibly interrupted. Any
+future write must be a separate operation using the existing permission system.
 
 ## 4. Key design decisions
 
@@ -478,14 +488,15 @@ Each decision lists the *why*, per the AGENTS.md rule to document decisions.
   isolation must enforce network egress controls. No arbitrary JavaScript,
   cookie/storage/profile API, challenge bypass, or unrestricted browser agent
   exists in this phase.
-- **D24 — Coding starts as a proposal-only provider seam.** Phase 10 Step 1
-  accepts bounded source snapshots, treats all repository/provider text as
-  untrusted, and represents edits as full-file replacements with source-hash
-  preconditions. Reusing `Workspace.resolve()` keeps path safety in one place.
-  There is no coding runtime, disk write, command/test execution, or real
-  provider, so analysis/planning cannot acquire an execution capability by
-  implication. Any later write must be a separate explicit operation and use
-  the existing permission system.
+- **D24 — Coding is split between read-only analysis and proposal data.**
+  Phase 10 Step 1 accepts bounded source snapshots, treats all
+  repository/provider text as untrusted, and represents edits as full-file
+  replacements with source-hash preconditions. Step 2 adds only local,
+  read-only analysis through `Workspace`; it does not write or execute source
+  text and makes no network calls. Reusing `Workspace.resolve()` keeps path
+  safety in one place. Patch application, commands/tests, and real providers
+  remain out of scope. Any future write must be a separate explicit operation
+  using the existing permission system.
 
 ---
 
@@ -508,9 +519,9 @@ These are **NOT IMPLEMENTED** and must not be added prematurely
   Phase 9 adds only fixed browser operations in D23. The Playwright URL checks
   are not a domain/SSRF allowlist. There is no shell, process launch, arbitrary
   code execution, remote desktop, screenshot persistence, or generic computer
-  or browser action tool. Phase 10 Step 1 has coding contracts and a mock only;
-  a coding runtime, patch application, source writes, and test/build execution
-  are NOT IMPLEMENTED.
+  or browser action tool. Phase 10 Steps 1–2 provide coding contracts, a mock,
+  and a bounded read-only local analyzer; patch application, source writes,
+  command use, and test/build execution are NOT IMPLEMENTED.
 - Output verification beyond "all steps completed" (a richer `Verifier`).
 - Human-facing approval channel (CLI prompt / UI); a synchronous approval
   callback protocol exists and is fail-safe.
