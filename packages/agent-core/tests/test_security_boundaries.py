@@ -22,6 +22,7 @@ These tests run fully offline.
 
 from __future__ import annotations
 
+import ast
 import re
 from datetime import datetime
 from pathlib import Path
@@ -115,6 +116,39 @@ class TestStaticSourceBoundaries:
                         continue
                     offenders.append(f"{path.name}: {match.group(1)}")
         assert offenders == [], f"non-whitelisted import in document layer: {offenders}"
+
+    def test_computer_dependencies_are_optional_and_platform_isolated(self) -> None:
+        """Only the Windows adapter may mention optional UI packages, and
+        it must import them lazily rather than at module load time."""
+        import sys
+
+        optional_windows = {"pywinauto", "win32api", "PIL"}
+        allowed_third_party = optional_windows | {"pydantic"}
+        offenders: list[str] = []
+        for sub in ("computer", "computer_tools"):
+            for path in sorted((SRC / sub).rglob("*.py")):
+                source = path.read_text(encoding="utf-8")
+                tree = ast.parse(source, filename=str(path))
+                for match in _IMPORT_RE.finditer(source):
+                    imported = match.group(1)
+                    top = imported.split(".")[0]
+                    if top in sys.stdlib_module_names or top == "agent_core":
+                        continue
+                    if top not in allowed_third_party:
+                        offenders.append(f"{path.name}: {imported}")
+                    elif top in optional_windows and path.name != "windows.py":
+                        offenders.append(f"{path.name}: platform import {imported}")
+                if path.name == "windows.py":
+                    for node in tree.body:
+                        if isinstance(node, ast.Import):
+                            names = [alias.name.split(".")[0] for alias in node.names]
+                        elif isinstance(node, ast.ImportFrom):
+                            names = [node.module.split(".")[0]] if node.module else []
+                        else:
+                            continue
+                        if optional_windows.intersection(names):
+                            offenders.append(f"{path.name}: eager optional import {names}")
+        assert offenders == [], f"unsafe computer dependency boundary: {offenders}"
 
 
 class TestCalculatorInjections:

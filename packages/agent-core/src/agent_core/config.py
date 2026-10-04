@@ -49,6 +49,15 @@ Variables:
 - ``MEMORY_MAX_CONTEXT_ITEMS`` (int, default ``20`` — RAG context item cap)
 - ``MEMORY_SHORT_TERM_TTL_S`` (int, default ``3600`` — short_term TTL)
 - ``MEMORY_WORKING_TTL_S`` (int, default ``86400`` — working TTL)
+- ``COMPUTER_MAX_ACTIONS_PER_TASK`` (int, default ``20``)
+- ``COMPUTER_ACTION_TIMEOUT_S`` (float, default ``5``)
+- ``COMPUTER_MAX_TEXT_INPUT_CHARS`` (int, default ``256``)
+- ``COMPUTER_MAX_SCREENSHOT_BYTES`` (int, default ``1048576``)
+- ``COMPUTER_MAX_WINDOWS`` (int, default ``50``)
+- ``COMPUTER_MAX_UI_ELEMENTS`` (int, default ``100``)
+- ``COMPUTER_MAX_RETRIES`` (int, default ``1``)
+- ``COMPUTER_MOUSE_MOVE_DURATION_S`` (float, default ``0.5``)
+- ``COMPUTER_CURSOR_TOLERANCE_PX`` (int, default ``2``)
 
 ``DATA_ROOT`` holds logs and task artifacts; it is independent of the
 workspace boundary, which the Phase 3 filesystem tools enforce strictly.
@@ -102,6 +111,16 @@ class Settings(BaseModel):
     memory_max_context_items: int = 20
     memory_short_term_ttl_s: int = 3_600
     memory_working_ttl_s: int = 86_400
+    # Computer Agent Foundation (Phase 6) — conservative runtime bounds.
+    computer_max_actions_per_task: int = 20
+    computer_action_timeout_s: float = 5.0
+    computer_max_text_input_chars: int = 256
+    computer_max_screenshot_bytes: int = 1_048_576
+    computer_max_windows: int = 50
+    computer_max_ui_elements: int = 100
+    computer_max_retries: int = 1
+    computer_mouse_move_duration_s: float = 0.5
+    computer_cursor_tolerance_px: int = 2
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Settings:
@@ -184,6 +203,35 @@ class Settings(BaseModel):
             ),
             memory_working_ttl_s=int(
                 source.get("MEMORY_WORKING_TTL_S", defaults.memory_working_ttl_s)
+            ),
+            computer_max_actions_per_task=int(
+                source.get("COMPUTER_MAX_ACTIONS_PER_TASK", defaults.computer_max_actions_per_task)
+            ),
+            computer_action_timeout_s=float(
+                source.get("COMPUTER_ACTION_TIMEOUT_S", defaults.computer_action_timeout_s)
+            ),
+            computer_max_text_input_chars=int(
+                source.get("COMPUTER_MAX_TEXT_INPUT_CHARS", defaults.computer_max_text_input_chars)
+            ),
+            computer_max_screenshot_bytes=int(
+                source.get("COMPUTER_MAX_SCREENSHOT_BYTES", defaults.computer_max_screenshot_bytes)
+            ),
+            computer_max_windows=int(
+                source.get("COMPUTER_MAX_WINDOWS", defaults.computer_max_windows)
+            ),
+            computer_max_ui_elements=int(
+                source.get("COMPUTER_MAX_UI_ELEMENTS", defaults.computer_max_ui_elements)
+            ),
+            computer_max_retries=int(
+                source.get("COMPUTER_MAX_RETRIES", defaults.computer_max_retries)
+            ),
+            computer_mouse_move_duration_s=float(
+                source.get(
+                    "COMPUTER_MOUSE_MOVE_DURATION_S", defaults.computer_mouse_move_duration_s
+                )
+            ),
+            computer_cursor_tolerance_px=int(
+                source.get("COMPUTER_CURSOR_TOLERANCE_PX", defaults.computer_cursor_tolerance_px)
             ),
         )
 

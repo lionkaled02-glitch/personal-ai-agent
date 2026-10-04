@@ -43,13 +43,16 @@ dependency direction (a layer may depend only on layers below it).
 ```
 
 **What "PARTIAL" means on the bottom row:** provider *interfaces* exist
-(`ModelProvider`), the deterministic mock provider is implemented, and one
-real adapter (OpenAI, optional extra) is implemented. Real
-computer/browser/file providers are NOT IMPLEMENTED.
+(`ModelProvider`, `ComputerProvider`), the deterministic mock model provider
+is implemented, and the OpenAI adapter (optional extra) is implemented. A
+provider-neutral computer foundation and an optional Windows UI Automation
+adapter are implemented; browser automation and unrestricted computer
+control are not.
 
 The implemented portion is the middle band: **Orchestrator → Planner →
-Model Gateway → Provider → Tool Registry → Permission**, plus the events
-backbone that runs alongside all of it.
+Model Gateway → Provider → Tool Registry → Permission**, plus the opt-in
+Phase 6 computer runtime and the events backbone that runs alongside all of
+it.
 
 ---
 
@@ -64,16 +67,16 @@ All implemented code lives in the single package
 | `planner.py` | `Plan`, `PlanStep`, `Planner`, `ModelPlanner`, `plan_json_schema` | Turns a request into an ordered list of tool steps. Sends an explicit structured-output contract (`response_format`), tolerates one markdown code fence, and validates output (JSON → `Plan` schema → known tool names) before anything runs. | IMPLEMENTED |
 | `executor.py` | `Executor`, `Verifier`, `BasicVerifier` | Runs a plan: TOOL_REQUESTED → permission check → approval → execute via the Tool Runtime → verify → terminal state. Emits task/step events incl. `TOOL_DENIED`. | IMPLEMENTED |
 | `tools.py` | `Tool`, `ToolSpec`, `ToolResult`, `ToolRegistry` | Tool abstraction (incl. `version`, `deterministic` metadata) + registry with controlled execution and JSON-Schema validation. Structured `ToolResult` (`error_code`, `metadata`). | IMPLEMENTED |
-| `tool_runtime.py` | `ToolRuntime`, `ToolInvocation` | The agent's only tool-execution path: requires an explicit ALLOWED permission decision (backstop), runs the registry's validate→run→validate pipeline, attaches execution metadata, emits tool lifecycle events. Provider-independent. | IMPLEMENTED |
+| `tool_runtime.py` | `ToolRuntime`, `ToolInvocation` | The agent's only tool-execution path: requires an explicit ALLOWED permission decision (backstop), runs the registry's validate→run→validate pipeline, attaches execution metadata, emits tool lifecycle events, and redacts sensitive computer tool inputs/outputs from events. Provider-independent. | IMPLEMENTED |
 | `schema.py` | `validate_against_schema` | Minimal JSON-Schema (subset) validator: `type`, `properties`, `required`, `items`, `enum`. | IMPLEMENTED |
-| `permissions.py` | `PermissionLevel`, `PermissionPolicy`, `PermissionManager`, `ApprovalCallback` | Level-based policy decisions and fail-safe approval routing. | IMPLEMENTED |
-| `events.py` | `EventType`, `AgentEvent`, `EventBus`, `bounded_text`, `bounded_value` | Structured, in-memory event log + subscribers. Operational data only; `bounded_value` caps large tool I/O (e.g. file content) in event payloads. | IMPLEMENTED |
+| `permissions.py` | `PermissionLevel`, `PermissionPolicy`, `PermissionManager`, `ApprovalCallback` | Level-based policy decisions and fail-safe approval routing; a private, exact-tool authorization scope lets explicitly registered computer tools reuse the executor's existing approval without widening privileges. | IMPLEMENTED |
+| `events.py` | `EventType`, `AgentEvent`, `EventBus`, `bounded_text`, `bounded_value` | Structured, in-memory event log + subscribers. Operational data only; `bounded_value` caps large tool I/O, computer outputs and typed-text inputs are redacted, and computer lifecycle events carry bounded status/metadata. | IMPLEMENTED |
 | `providers/base.py` | `ModelProvider`, `ModelRequest`, `ModelResponse`, `Capability` | Vendor-neutral model interface. `stream`/`embed` are declared but raise until an adapter implements them. | IMPLEMENTED |
 | `providers/mock.py` | `MockModelProvider` | Deterministic in-memory provider (scripted or keyword mode). No network, no key. Default provider. | IMPLEMENTED |
 | `providers/gateway.py` | `ModelGateway` | `ModelProvider` decorator: normalizes provider errors, retries transient failures with bounded exponential backoff, passes structured responses through unchanged. Vendor-agnostic. | IMPLEMENTED |
 | `providers/factory.py` | `create_provider`, `build_gateway`, `SUPPORTED_PROVIDERS` | Configuration-driven provider selection (`MODEL_PROVIDER`) + gateway construction. The only place that knows provider names. | IMPLEMENTED |
 | `providers/openai_provider.py` | `OpenAIProvider` | Real Chat Completions adapter (optional `openai` extra, lazy SDK import). Env credentials, timeouts, sanitized error mapping. | IMPLEMENTED |
-| `config.py` | `Settings` | Env-based configuration (`AGENT_NAME`, `LOG_LEVEL`, `DATA_ROOT`, `MODEL_PROVIDER`, `MODEL_NAME`, `MODEL_TIMEOUT_S`, `MODEL_MAX_RETRIES`, `WORKSPACE_ROOT`, `WORKSPACE_MAX_*` limits, `DOCUMENT_MAX_*` / `DOCUMENT_CHUNK_*` limits, `MEMORY_*` limits/TTLs). No secrets. | IMPLEMENTED |
+| `config.py` | `Settings` | Env-based configuration (`AGENT_NAME`, `LOG_LEVEL`, `DATA_ROOT`, `MODEL_PROVIDER`, `MODEL_NAME`, `MODEL_TIMEOUT_S`, `MODEL_MAX_RETRIES`, `WORKSPACE_ROOT`, `WORKSPACE_MAX_*` limits, `DOCUMENT_MAX_*` / `DOCUMENT_CHUNK_*` limits, `MEMORY_*` limits/TTLs, `COMPUTER_*` limits). No secrets. | IMPLEMENTED |
 | `demo_tools.py` | `DemoTool` | The demo tool (`demo_tool`, LOW permission) used to prove the end-to-end flow. | IMPLEMENTED |
 | `builtin_tools/` | `CalculatorTool`, `DateTimeTool`, `TextUtilsTool`, `JsonUtilsTool`, `register_default_tools` | Safe, deterministic, side-effect-free built-in tools (all LOW permission, bounded input). Date/time is declared non-deterministic. No shell/network. | IMPLEMENTED |
 | `workspace.py` | `Workspace`, `WorkspaceError`, `WorkspaceLimits` | The workspace boundary: turns model-supplied (workspace-relative) paths into real filesystem paths with fail-closed resolution (no absolute paths, no `../` escape, no symlink/junction escape, no host-path leakage). | IMPLEMENTED |
@@ -93,8 +96,12 @@ All implemented code lives in the single package
 | `memory/errors.py` | `MemoryStoreError` + stable codes | Structured memory-domain failures: `memory_not_found`, `memory_invalid_input`, `memory_type_not_allowed`, `memory_limit_exceeded`, `memory_field_immutable`, `secret_like_content`. (Named `MemoryStoreError` so it never shadows the Python builtin `MemoryError`.) | IMPLEMENTED |
 | `memory_tools/` | `RememberTool`, `RecallTool`, `UpdateMemoryTool`, `ForgetTool`, `ListMemoriesTool`, `register_memory_tools` | Five permission-gated tools (remember/update MEDIUM, forget HIGH, recall/list LOW) over an explicit `MemoryStore`. Validation + limits at tool and store layer; immutable identity fields on update; forget soft by default; read outputs carry stable public fields only. | IMPLEMENTED |
 | `rag/context.py` | `ContextBuilder`, `Context`, `ContextItem`, `ContextRequest` | Provider-neutral RAG assembly: retrieved memories (via `MemoryRetriever`) + document chunks (via `RetrievalIndex`) into a structured, bounded, deterministically ordered context. Memories first, then documents; every item carries kind (`memory`/`document`), source id/ref, provenance, location; char/item budget with explicit omission reporting; assembly only — no answer generation, no interpretation of content. | IMPLEMENTED |
-| `errors.py` | `AgentCoreError` + subclasses | Single exception hierarchy so agent failures are catchable (incl. `PermissionDeniedError`, `ToolAlreadyRegisteredError`, `WorkspaceError`, `DocumentError`). | IMPLEMENTED |
-| `agent.py` | `Agent` | Facade that wires planner + registry + permissions + events + executor (+ knowledge store + memory store + context builder) into `run(request)`. `create_demo`/`create_configured` register the default tool set **plus the Phase 3 workspace tools, the Phase 4 document tools, and the Phase 5 memory tools** (the configured agent builds its `KnowledgeStore` and `MemoryLimits` from `Settings`). Exposes `knowledge_store`, `memory_store`, and `context_builder` as clean accessors. Memory retrieval is **explicit** (tool-driven); no memory is auto-injected into planning or model calls. | IMPLEMENTED |
+| `errors.py` | `AgentCoreError` + subclasses | Single exception hierarchy so agent failures are catchable (incl. `PermissionDeniedError`, `ToolAlreadyRegisteredError`, `WorkspaceError`, `DocumentError`). Computer provider errors use stable, sanitized codes in `computer/errors.py`. | IMPLEMENTED |
+| `computer/models.py`, `computer/interfaces.py`, `computer/limits.py` | `ComputerProvider`, bounded models, `ComputerLimits` | Provider-neutral screen/window/UI/screenshot observations and explicit mouse/keyboard action models; strict validation and finite hard/configured limits. UI labels are untrusted data. | IMPLEMENTED |
+| `computer/runtime.py`, `computer/verification.py`, `computer/recovery.py` | `ComputerRuntime`, `VerificationCondition`, `RecoveryPolicy` | Existing permission-system integration around observation → authorization → action → fresh observation → deterministic verification; structured results/events, bounded safe retries and cooperative timeouts. No action is assumed successful without verification. | IMPLEMENTED |
+| `computer/windows.py` | `WindowsComputerProvider` | Optional Windows UI Automation adapter; `pywinauto`, `pywin32`, and Pillow load only when explicitly constructed on Windows. Non-Windows use raises `UnsupportedPlatformError`; missing extras raise `ProviderUnavailableError`. | IMPLEMENTED |
+| `computer_tools/` | 6 observation + 8 explicit action tools | Opt-in tools with declared schemas and LOW observation / MEDIUM interaction levels. No generic arbitrary-action tool. | IMPLEMENTED |
+| `agent.py` | `Agent` | Facade that wires planner + registry + permissions + events + executor (+ knowledge store + memory store + context builder) into `run(request)`. `create_demo`/`create_configured` register the default tool set plus Phases 3–5 tools. Phase 6 tools are registered only when `create_configured(computer_provider=...)` receives an explicit provider; limits come from `COMPUTER_*`. No provider is auto-created. | IMPLEMENTED |
 
 Entry point: `apps/backend/src/main.py` (demo, mock provider by default, no API key).
 
@@ -319,6 +326,28 @@ Each decision lists the *why*, per the AGENTS.md rule to document decisions.
   the seams: a future embedding/vector provider can replace
   `LexicalMemoryRetriever`/`KnowledgeStore` without touching the builder,
   the memory model, or the tools. No embeddings in this phase.
+- **D20 — Computer interaction is provider-neutral, explicit, permissioned,
+  and postcondition-verified.** Phase 6 adds a `ComputerProvider` protocol,
+  bounded typed models/runtime, an opt-in Windows UI Automation adapter,
+  and 14 named tools (six observations, eight interactions). No provider is
+  created automatically and there is no generic action/command tool. The
+  lifecycle is observation → intent validation → existing `PermissionManager`
+  check/approval → one bounded action → fresh observation → deterministic
+  verification. Observation is LOW; every interaction (including mouse
+  movement, focus, selection, and keyboard input) is MEDIUM; destructive,
+  externally consequential, and unknown operation names classify as HIGH.
+  Executor approval is reused only for the exact registered tool invocation
+  through a private scope; it cannot lower a HIGH requirement or bypass the
+  deny-list. A provider returning without a verified postcondition is
+  `unverified`, never success. Only idempotent operations with safe
+  conditions may retry, under a small configured budget; clicks, typing,
+  and other non-idempotent input do not auto-retry. Timeouts are cooperative:
+  the synchronous runtime detects an overrun but cannot forcibly interrupt a
+  blocked OS API call. UI/window data is untrusted; screenshot bytes are
+  sensitive, capped, returned only by explicit screenshot requests, kept
+  in-memory, and omitted from action history and events. The Windows extra
+  is optional and lazily imported; non-Windows behavior is a structured
+  `unsupported_platform` result, not a failed import.
 
 ---
 
@@ -334,15 +363,15 @@ These are **NOT IMPLEMENTED** and must not be added prematurely
 - Native strict `json_schema` output mode (the openai adapter uses
   `json_object` mode; see decision D11).
 - Side-effecting tools *beyond the workspace boundary*: web fetch/search,
-  shell/command execution, computer control, browser automation. Phase 3's
-  workspace file tools (scoped to `WORKSPACE_ROOT`, permission-gated, no
-  shell/subprocess) are IMPLEMENTED; any tool that leaves the workspace or
-  runs a process is a future phase and must be HIGH-permission.
+  browser automation, and unrestricted computer control remain
+  NOT IMPLEMENTED. Phase 3's filesystem tools are scoped to `WORKSPACE_ROOT`;
+  Phase 6 adds only the explicit, bounded Windows computer foundation
+  described in D20. There is no shell, process launch, arbitrary code
+  execution, remote desktop, or generic computer action tool.
 - Output verification beyond "all steps completed" (a richer `Verifier`).
 - Human-facing approval channel (CLI prompt / UI); a synchronous approval
   callback protocol exists and is fail-safe.
-- Computer control and browser automation.
-- Voice I/O.
+- Browser automation and voice I/O.
 - Image/video generation and presentation/document *generation*. (Reading &
   analyzing existing documents — TXT/MD/PDF/DOCX/PPTX/XLSX — is IMPLEMENTED
   in Phase 4; producing new documents is not.)
@@ -378,6 +407,12 @@ These are **NOT IMPLEMENTED** and must not be added prematurely
   SDK **lazily** (keep the package importable without it), and register the
   provider name in `providers/factory.py`. Everything upstream (gateway,
   planner, agent) then works unchanged. See CONTRIBUTING.md for the pattern.
+- **New computer provider (Phase 6):** implement `ComputerProvider` using
+  only the explicit observation and input primitives. Keep the provider
+  optional and platform-isolated; enforce the same bounds and existing
+  `PermissionManager`, treat UI data as untrusted, and never add command,
+  process, network, or generic arbitrary-action methods. Pass the provider
+  explicitly to `Agent.create_configured(computer_provider=...)`.
 - **New document parser (Phase 4):** subclass `DocumentParser`, declare
   `supported_extensions` / `supported_media_types`, implement `_extract`
   (return `ExtractedContent`), and register the instance in a
