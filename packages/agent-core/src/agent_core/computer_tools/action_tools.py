@@ -22,10 +22,12 @@ from ..permissions import PermissionLevel
 from ..tools import ToolResult, ToolSpec
 from ._common import (
     ACTION_OUTPUT_SCHEMA,
+    VISUAL_VERIFICATION_SCHEMA,
     action_tool_result,
     has_only_keys,
     invalid_input_result,
     parse_verification,
+    parse_visual_verification,
 )
 
 MOVE_MOUSE_TOOL_NAME = "computer_move_mouse"
@@ -44,6 +46,7 @@ _MOUSE_PROPERTIES: dict[str, Any] = {
     "button": _BUTTON_SCHEMA,
     "action_id": {"type": "string"},
     "verification": {"type": "object", "description": "Optional deterministic postcondition."},
+    "visual_verification": VISUAL_VERIFICATION_SCHEMA,
 }
 _VERIFICATION_KIND_VALUES = [
     "active_window_changed",
@@ -90,7 +93,7 @@ def _run_mouse(
     *,
     allow_duration: bool,
 ) -> ToolResult:
-    allowed = {"x", "y", "action_id", "verification"}
+    allowed = {"x", "y", "action_id", "verification", "visual_verification"}
     if kind is not MouseActionKind.MOVE:
         allowed.add("button")
     if allow_duration:
@@ -100,13 +103,14 @@ def _run_mouse(
     try:
         action = _mouse_action(input, kind, allow_duration=allow_duration)
         verification = parse_verification(input)
+        visual_verification = parse_visual_verification(input)
     except ValidationError:
         return invalid_input_result(tool_name)
     if kind is MouseActionKind.MOVE:
-        return action_tool_result(runtime.move_mouse(action, verification))
+        return action_tool_result(runtime.move_mouse(action, verification, visual_verification))
     if kind is MouseActionKind.CLICK:
-        return action_tool_result(runtime.click(action, verification))
-    return action_tool_result(runtime.double_click(action, verification))
+        return action_tool_result(runtime.click(action, verification, visual_verification))
+    return action_tool_result(runtime.double_click(action, verification, visual_verification))
 
 
 class ComputerMoveMouseTool:
@@ -125,6 +129,7 @@ class ComputerMoveMouseTool:
                 "duration_s": {"type": "number"},
                 "action_id": _MOUSE_PROPERTIES["action_id"],
                 "verification": _MOUSE_PROPERTIES["verification"],
+                "visual_verification": _MOUSE_PROPERTIES["visual_verification"],
             },
         ),
         output_schema=ACTION_OUTPUT_SCHEMA,
@@ -162,6 +167,7 @@ class ComputerClickTool:
                 "button": _MOUSE_PROPERTIES["button"],
                 "action_id": _MOUSE_PROPERTIES["action_id"],
                 "verification": _MOUSE_PROPERTIES["verification"],
+                "visual_verification": _MOUSE_PROPERTIES["visual_verification"],
             },
         ),
         output_schema=ACTION_OUTPUT_SCHEMA,
@@ -199,6 +205,7 @@ class ComputerDoubleClickTool:
                 "button": _MOUSE_PROPERTIES["button"],
                 "action_id": _MOUSE_PROPERTIES["action_id"],
                 "verification": _MOUSE_PROPERTIES["verification"],
+                "visual_verification": _MOUSE_PROPERTIES["visual_verification"],
             },
         ),
         output_schema=ACTION_OUTPUT_SCHEMA,
@@ -233,6 +240,7 @@ class ComputerFocusWindowTool:
                 "window_identifier": {"type": "string"},
                 "action_id": {"type": "string"},
                 "verification": {"type": "object"},
+                "visual_verification": VISUAL_VERIFICATION_SCHEMA,
             },
         ),
         output_schema=ACTION_OUTPUT_SCHEMA,
@@ -245,7 +253,9 @@ class ComputerFocusWindowTool:
         self._runtime = runtime
 
     def run(self, input: dict[str, Any]) -> ToolResult:
-        if not has_only_keys(input, {"window_identifier", "action_id", "verification"}):
+        if not has_only_keys(
+            input, {"window_identifier", "action_id", "verification", "visual_verification"}
+        ):
             return invalid_input_result(FOCUS_WINDOW_TOOL_NAME)
         payload: dict[str, Any] = {
             "window_identifier": input.get("window_identifier"),
@@ -255,9 +265,12 @@ class ComputerFocusWindowTool:
         try:
             action = FocusWindowAction.model_validate(payload)
             verification = parse_verification(input)
+            visual_verification = parse_visual_verification(input)
         except ValidationError:
             return invalid_input_result(FOCUS_WINDOW_TOOL_NAME)
-        return action_tool_result(self._runtime.focus_window(action, verification))
+        return action_tool_result(
+            self._runtime.focus_window(action, verification, visual_verification)
+        )
 
 
 class ComputerSelectUIElementTool:
@@ -274,6 +287,7 @@ class ComputerSelectUIElementTool:
                 "automation_id": {"type": "string"},
                 "action_id": {"type": "string"},
                 "verification": {"type": "object"},
+                "visual_verification": VISUAL_VERIFICATION_SCHEMA,
             },
         ),
         output_schema=ACTION_OUTPUT_SCHEMA,
@@ -287,7 +301,14 @@ class ComputerSelectUIElementTool:
 
     def run(self, input: dict[str, Any]) -> ToolResult:
         if not has_only_keys(
-            input, {"window_identifier", "automation_id", "action_id", "verification"}
+            input,
+            {
+                "window_identifier",
+                "automation_id",
+                "action_id",
+                "verification",
+                "visual_verification",
+            },
         ):
             return invalid_input_result(SELECT_UI_ELEMENT_TOOL_NAME)
         payload: dict[str, Any] = {
@@ -299,9 +320,12 @@ class ComputerSelectUIElementTool:
         try:
             action = SelectUIElementAction.model_validate(payload)
             verification = parse_verification(input)
+            visual_verification = parse_visual_verification(input)
         except ValidationError:
             return invalid_input_result(SELECT_UI_ELEMENT_TOOL_NAME)
-        return action_tool_result(self._runtime.select_ui_element(action, verification))
+        return action_tool_result(
+            self._runtime.select_ui_element(action, verification, visual_verification)
+        )
 
 
 class ComputerPressKeyTool:
@@ -317,6 +341,7 @@ class ComputerPressKeyTool:
                 "key": {"type": "string", "enum": [key.value for key in KeyboardKey]},
                 "action_id": {"type": "string"},
                 "verification": {"type": "object"},
+                "visual_verification": VISUAL_VERIFICATION_SCHEMA,
             },
         ),
         output_schema=ACTION_OUTPUT_SCHEMA,
@@ -329,7 +354,7 @@ class ComputerPressKeyTool:
         self._runtime = runtime
 
     def run(self, input: dict[str, Any]) -> ToolResult:
-        if not has_only_keys(input, {"key", "action_id", "verification"}):
+        if not has_only_keys(input, {"key", "action_id", "verification", "visual_verification"}):
             return invalid_input_result(PRESS_KEY_TOOL_NAME)
         payload = {"kind": KeyboardActionKind.PRESS_KEY, "key": input.get("key")}
         if "action_id" in input:
@@ -337,9 +362,12 @@ class ComputerPressKeyTool:
         try:
             action = KeyboardAction.model_validate(payload)
             verification = parse_verification(input)
+            visual_verification = parse_visual_verification(input)
         except ValidationError:
             return invalid_input_result(PRESS_KEY_TOOL_NAME)
-        return action_tool_result(self._runtime.keyboard_action(action, verification))
+        return action_tool_result(
+            self._runtime.keyboard_action(action, verification, visual_verification)
+        )
 
 
 class ComputerHotkeyTool:
@@ -362,6 +390,7 @@ class ComputerHotkeyTool:
                 },
                 "action_id": {"type": "string"},
                 "verification": {"type": "object"},
+                "visual_verification": VISUAL_VERIFICATION_SCHEMA,
             },
         ),
         output_schema=ACTION_OUTPUT_SCHEMA,
@@ -374,7 +403,9 @@ class ComputerHotkeyTool:
         self._runtime = runtime
 
     def run(self, input: dict[str, Any]) -> ToolResult:
-        if not has_only_keys(input, {"key", "modifiers", "action_id", "verification"}):
+        if not has_only_keys(
+            input, {"key", "modifiers", "action_id", "verification", "visual_verification"}
+        ):
             return invalid_input_result(HOTKEY_TOOL_NAME)
         payload = {
             "kind": KeyboardActionKind.HOTKEY,
@@ -386,9 +417,12 @@ class ComputerHotkeyTool:
         try:
             action = KeyboardAction.model_validate(payload)
             verification = parse_verification(input)
+            visual_verification = parse_visual_verification(input)
         except ValidationError:
             return invalid_input_result(HOTKEY_TOOL_NAME)
-        return action_tool_result(self._runtime.keyboard_action(action, verification))
+        return action_tool_result(
+            self._runtime.keyboard_action(action, verification, visual_verification)
+        )
 
 
 class ComputerTypeTextTool:
@@ -405,6 +439,7 @@ class ComputerTypeTextTool:
                 "text": {"type": "string", "maxLength": 1_024},
                 "action_id": {"type": "string"},
                 "verification": {"type": "object"},
+                "visual_verification": VISUAL_VERIFICATION_SCHEMA,
             },
         ),
         output_schema=ACTION_OUTPUT_SCHEMA,
@@ -418,7 +453,7 @@ class ComputerTypeTextTool:
         self._runtime = runtime
 
     def run(self, input: dict[str, Any]) -> ToolResult:
-        if not has_only_keys(input, {"text", "action_id", "verification"}):
+        if not has_only_keys(input, {"text", "action_id", "verification", "visual_verification"}):
             return invalid_input_result(TYPE_TEXT_TOOL_NAME)
         payload: dict[str, Any] = {
             "kind": KeyboardActionKind.TYPE_TEXT,
@@ -429,6 +464,9 @@ class ComputerTypeTextTool:
         try:
             action = KeyboardAction.model_validate(payload)
             verification = parse_verification(input)
+            visual_verification = parse_visual_verification(input)
         except ValidationError:
             return invalid_input_result(TYPE_TEXT_TOOL_NAME)
-        return action_tool_result(self._runtime.keyboard_action(action, verification))
+        return action_tool_result(
+            self._runtime.keyboard_action(action, verification, visual_verification)
+        )

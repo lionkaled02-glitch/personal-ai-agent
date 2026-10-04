@@ -62,6 +62,7 @@ from agent_core.computer_tools import COMPUTER_TOOL_NAMES
 from agent_core.computer_tools.action_tools import ComputerClickTool, ComputerTypeTextTool
 from agent_core.computer_tools.observation_tools import ComputerScreenshotTool
 from agent_core.permissions import PermissionManager as ExistingPermissionManager
+from agent_core.vision.tools import VISION_TOOL_NAMES
 from pydantic import ValidationError
 
 FIXED_NOW = datetime(2026, 1, 1, tzinfo=UTC)
@@ -554,7 +555,7 @@ class TestPermissionAndActionValidation:
         assert result.retryable is False
         assert result.recovery.action is RecoveryAction.REFRESH_OBSERVATION
 
-    def test_click_can_be_verified_by_observed_screenshot_change(self) -> None:
+    def test_screenshot_change_is_not_semantic_click_verification(self) -> None:
         runtime, provider, _, _ = _runtime(approval=lambda _request: True)
         provider.on_click = lambda: setattr(provider, "screenshot_bytes", b"after-click")
         condition = VerificationCondition(kind=VerificationKind.SCREENSHOT_CHANGED)
@@ -562,7 +563,10 @@ class TestPermissionAndActionValidation:
             MouseAction(kind=MouseActionKind.CLICK, point=Point(x=20, y=30)),
             verification=condition,
         )
-        assert result.success is True
+        assert result.success is False
+        assert result.status is ComputerActionStatus.UNVERIFIED
+        assert result.error_code == "semantic_verification_required"
+        assert result.verification.status is VerificationStatus.PASSED
         assert result.verification.reason == "screenshot_content_changed"
         assert result.observed_before is not None
         assert result.observed_before.screenshot is not None
@@ -978,7 +982,10 @@ class TestComputerToolLayer:
             computer_provider=provider,
         )
         assert set(COMPUTER_TOOL_NAMES).issubset(opted_in.registry.names())
-        assert len(opted_in.registry.names()) == 23 + len(COMPUTER_TOOL_NAMES)
+        assert set(VISION_TOOL_NAMES).issubset(opted_in.registry.names())
+        assert len(opted_in.registry.names()) == (
+            23 + len(COMPUTER_TOOL_NAMES) + len(VISION_TOOL_NAMES)
+        )
 
 
 class TestComputerPermissionTypes:

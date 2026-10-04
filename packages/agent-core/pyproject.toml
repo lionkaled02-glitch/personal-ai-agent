@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agent-core"
-version = "0.7.0"
-description = "Core abstractions for a modular personal autonomous AI agent: tasks, planner, executor, permissioned tools, model providers, workspace, document and memory retrieval, and safe computer interaction."
+version = "0.8.0"
+description = "Core abstractions for a modular personal autonomous AI agent: tasks, planner, executor, permissioned tools, model providers, workspace, document and memory retrieval, safe computer interaction, and visual verification."
 readme = "README.md"
 requires-python = ">=3.11"
 # Deliberately minimal: the core must not depend on any vendor SDK or
@@ -16,6 +16,9 @@ dependencies = ["pydantic>=2.7,<3"]
 # only when you actually select that provider (MODEL_PROVIDER=...).
 [project.optional-dependencies]
 openai = ["openai>=1.40,<3"]
+# Optional local RGB comparison support (Phase 7). Metadata-only validation
+# and identical-payload checks do not require Pillow.
+vision-image = ["Pillow>=10,<13"]
 # Document parsing (Phase 4). Without it, the binary parsers (PDF, DOCX,
 # PPTX, XLSX) fail with a structured `parser_unavailable` error at parse
 # time; TXT and Markdown parsing never requires any extra.

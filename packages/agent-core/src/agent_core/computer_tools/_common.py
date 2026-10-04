@@ -12,6 +12,36 @@ from ..computer.models import (
 from ..computer.runtime import classify_computer_operation
 from ..computer.serialization import action_result_to_dict, operation_result_to_dict
 from ..tools import ToolResult
+from ..vision.models import VisualVerificationCondition, VisualVerificationKind
+
+VISUAL_VERIFICATION_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["kind"],
+    "properties": {
+        "kind": {
+            "type": "string",
+            "enum": [kind.value for kind in VisualVerificationKind],
+        },
+        "region": {
+            "type": "object",
+            "required": ["x", "y", "width", "height"],
+            "properties": {
+                "x": {"type": "integer", "minimum": 0, "maximum": 8192},
+                "y": {"type": "integer", "minimum": 0, "maximum": 8192},
+                "width": {"type": "integer", "minimum": 1, "maximum": 8192},
+                "height": {"type": "integer", "minimum": 1, "maximum": 8192},
+            },
+            "additionalProperties": False,
+        },
+        "minimum_similarity": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+        "minimum_change_ratio": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+        },
+    },
+    "additionalProperties": False,
+}
 
 ACTION_OUTPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -63,6 +93,20 @@ ACTION_OUTPUT_SCHEMA: dict[str, Any] = {
                 "observed": {"type": "object"},
             },
         },
+        "visual_verification": {
+            "type": "object",
+            "required": ["condition", "status", "method", "reason"],
+            "properties": {
+                "condition": VISUAL_VERIFICATION_SCHEMA,
+                "status": {"type": "string", "enum": ["verified", "failed", "uncertain"]},
+                "method": {"type": "string"},
+                "confidence": {"type": ["number", "null"], "minimum": 0.0, "maximum": 1.0},
+                "reason": {"type": "string"},
+                "evidence_ref": {"type": "string"},
+                "match": {"type": "object"},
+            },
+            "additionalProperties": False,
+        },
         "error_code": {"type": "string"},
         "error": {"type": "string"},
         "retryable": {"type": "boolean"},
@@ -112,6 +156,16 @@ def parse_verification(input: dict[str, Any]) -> VerificationCondition | None:
     if raw is None:
         return None
     return VerificationCondition.model_validate(raw)
+
+
+def parse_visual_verification(
+    input: dict[str, Any],
+) -> VisualVerificationCondition | None:
+    """Parse one strict pixel-level condition without echoing its contents."""
+    raw = input.get("visual_verification")
+    if raw is None:
+        return None
+    return VisualVerificationCondition.model_validate(raw)
 
 
 def action_tool_result(result: ComputerActionResult) -> ToolResult:

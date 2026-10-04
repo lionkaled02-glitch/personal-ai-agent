@@ -49,12 +49,26 @@ This repository currently contains:
   events, screenshots are bounded and ephemeral. This is not unrestricted
   autonomous control; browser, shell, arbitrary action, remote control, and
   destructive capabilities are not included.
+- **Phase 7: Vision & Visual Verification** — provider-neutral Pydantic
+  models and a deterministic offline provider reuse Phase 6 screenshots for
+  metadata-only observation and bounded local RGB comparison. Optional Pillow
+  support is lazy and isolated behind `vision-image`; no semantic content is
+  interpreted and no OCR is used. Visual predicates are structured
+  (`VERIFIED`/`FAILED`/`UNCERTAIN`), but pixel changes alone never prove a
+  click or other action. The opt-in `vision_analyze_screenshot` tool shares
+  Phase 6 capture/permissions and returns no screenshot bytes. A visual action
+  still needs a non-screenshot deterministic postcondition to succeed; on
+  uncertainty, only bounded screenshot/verification refreshes may run—never a
+  blind action replay. Screenshot bytes are ephemeral, absent from events, and
+  never stored or uploaded automatically. There is no second screenshot path,
+  remote vision API, or semantic model.
 
-Everything else (tools beyond the workspace boundary, web access, browser,
-voice, media, document/presentation generation, durable (persisted) memory,
-vector/semantic retrieval, and a user interface) is deliberately NOT
-IMPLEMENTED yet. Broader computer automation beyond the Phase 6 foundation
-is also not implemented.
+Everything else (tools beyond the workspace boundary, web access, browser
+automation, voice, media, document/presentation generation, durable memory,
+vector/semantic retrieval, semantic vision/OCR/remote vision APIs, and a user
+interface) is deliberately NOT IMPLEMENTED yet. Phase 7 adds only local
+pixel-level observation and verification; broader computer automation beyond
+the explicit Phase 6 primitives remains unimplemented.
 
 > See [ROADMAP.md](ROADMAP.md) and [ARCHITECTURE.md](ARCHITECTURE.md) for
 > exactly what exists and what does not.
@@ -222,7 +236,8 @@ User Request → Agent → Planner → Tool Registry → Mock Tool → Result �
 │       │   ├── memory_tools/    # remember/recall/update/forget/list tools (Phase 5)
 │       │   ├── rag/             # ContextBuilder: bounded memory+document context
 │       │   ├── computer/        # provider-neutral computer runtime + Windows adapter (Phase 6)
-│       │   ├── computer_tools/  # explicit observation/action tool registry (Phase 6)
+│       │   ├── computer_tools/  # explicit observation/action tools (Phases 6–7)
+│       │   ├── vision/          # ephemeral observation + pixel verification (Phase 7)
 │       │   ├── tool_runtime.py  # ToolRuntime (permission-gated execution)
 │       │   ├── errors.py        # exception hierarchy
 │       │   └── providers/
@@ -259,6 +274,7 @@ source .venv/bin/activate
 pip install -e packages/agent-core
 pip install pytest ruff mypy
 # Optional, Windows-only: pip install -e "packages/agent-core[computer-windows]"
+# Optional local RGB comparison: pip install -e "packages/agent-core[vision-image]"
 
 # 3. Run the test suite (offline, deterministic — no API keys needed)
 pytest
@@ -318,8 +334,9 @@ semantic/vector retrieval (the Phase 4 document and Phase 5 memory
 retrieval are lexical by design and swappable via the `RetrievalIndex` and
 `MemoryRetriever` protocols), durable (persisted) memory beyond the
 process lifetime, tools that leave the workspace boundary (web fetch/search,
-shell/command execution), browser automation, voice, image/video generation,
-presentation/document generation, and a user interface are all **future
-phases**. The Phase 6 computer tools are a bounded, explicit Windows
-foundation only; broader or autonomous computer control remains unimplemented.
+shell/command execution), browser automation (Phase 8), voice (Phase 9), semantic vision/OCR/remote
+vision APIs, image/video generation, presentation/document generation, and a
+user interface are all **future phases**. Phase 7 includes only local pixel
+comparison over Phase 6 screenshots; the computer tools remain bounded,
+explicit primitives and do not enable unrestricted autonomy.
 Adding new capabilities is explicitly gated in [ROADMAP.md](ROADMAP.md).
