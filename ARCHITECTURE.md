@@ -52,9 +52,11 @@ or computer control does not.
 The implemented portion is the middle band: **Orchestrator → Planner →
 Model Gateway → Provider → Tool Registry → Permission**, plus the opt-in
 Phase 6 computer runtime, the Phase 7 visual layer over its screenshot path,
-the Phase 8 voice transport, and the Phase 9 bounded browser runtime. These
-capabilities use the same Agent loop and permission system. The events
-backbone runs alongside all of it.
+the Phase 8 voice transport, and the Phase 9 bounded browser runtime. Phase
+10 Step 1 adds a non-executing coding data/provider foundation; it is not
+wired into the Agent loop and has no write or test-execution runtime. The
+integrated capabilities use the same Agent loop and permission system. The
+events backbone runs alongside them.
 
 ---
 
@@ -78,7 +80,7 @@ All implemented code lives in the single package
 | `providers/gateway.py` | `ModelGateway` | `ModelProvider` decorator: normalizes provider errors, retries transient failures with bounded exponential backoff, passes structured responses through unchanged. Vendor-agnostic. | IMPLEMENTED |
 | `providers/factory.py` | `create_provider`, `build_gateway`, `SUPPORTED_PROVIDERS` | Configuration-driven provider selection (`MODEL_PROVIDER`) + gateway construction. The only place that knows provider names. | IMPLEMENTED |
 | `providers/openai_provider.py` | `OpenAIProvider` | Real Chat Completions adapter (optional `openai` extra, lazy SDK import). Env credentials, timeouts, sanitized error mapping. | IMPLEMENTED |
-| `config.py` | `Settings` | Env-based configuration (`AGENT_NAME`, `LOG_LEVEL`, `DATA_ROOT`, model/workspace/document/memory settings, `COMPUTER_*`, `VISION_*`, `VOICE_*`, and bounded `BROWSER_*` limits). No secrets. | IMPLEMENTED |
+| `config.py` | `Settings` | Env-based configuration (`AGENT_NAME`, `LOG_LEVEL`, `DATA_ROOT`, model/workspace/document/memory settings, `COMPUTER_*`, `VISION_*`, `VOICE_*`, bounded `BROWSER_*`, and bounded `CODING_*` limits). No secrets. | IMPLEMENTED |
 | `demo_tools.py` | `DemoTool` | The demo tool (`demo_tool`, LOW permission) used to prove the end-to-end flow. | IMPLEMENTED |
 | `builtin_tools/` | `CalculatorTool`, `DateTimeTool`, `TextUtilsTool`, `JsonUtilsTool`, `register_default_tools` | Safe, deterministic, side-effect-free built-in tools (all LOW permission, bounded input). Date/time is declared non-deterministic. No shell/network. | IMPLEMENTED |
 | `workspace.py` | `Workspace`, `WorkspaceError`, `WorkspaceLimits` | The workspace boundary: turns model-supplied (workspace-relative) paths into real filesystem paths with fail-closed resolution (no absolute paths, no `../` escape, no symlink/junction escape, no host-path leakage). | IMPLEMENTED |
@@ -113,6 +115,9 @@ All implemented code lives in the single package
 | `browser/runtime.py`, `browser/verification.py`, `browser/recovery.py` | `BrowserRuntime`, explicit named operations, `VERIFIED`/`FAILED`/`UNCERTAIN`, safe recovery | Shared permission/event integration; observe → authorize → act → fresh observe → verify; sensitive-control blocking, page-text redaction, exact named-page targeting, one bounded navigation retry only for explicitly retryable safe failures, no high-risk retries. | IMPLEMENTED |
 | `browser/mock.py`, `browser/playwright_provider.py` | `MockBrowserProvider`, `PlaywrightBrowserProvider` | Deterministic offline provider; optional Playwright sync provider loaded only at launch, with new ephemeral contexts, no profile persistence, scheme checks on navigations, and bounded text/elements/screenshots. Playwright binaries are separate from the Python extra. | IMPLEMENTED |
 | `browser/serialization.py`, `browser/tools.py` | Safe projections, `BROWSER_TOOL_NAMES`, `register_browser_tools` | Fixed explicit LOW/MEDIUM/HIGH-classified tools; sensitive Tool Runtime I/O is event-redacted. `BrowserActionResult` uncertainty/failure is not reported as tool success. No arbitrary browser action dispatcher. | IMPLEMENTED |
+| `coding/models.py` | `CodingProject`, `CodeFile`, bounded analysis/edit/test-plan models, `CodePatch`, `CodingObservation` | Provider-neutral data contracts; source/repository/provider text remains untrusted, source fields are hidden from repr, and observations contain metadata only. Proposed replacements use original SHA-256/size preconditions; no patch is applied. | IMPLEMENTED |
+| `coding/interfaces.py`, `coding/limits.py`, `coding/errors.py` | `CodingProvider`, `CodingLimits`, `CodingOperation`, structured errors | Bounded analysis, edit-proposal, and test-planning contract; `CODING_*` settings are hard-clamped. The only operations are LOW-risk data/planning operations; there is no write/apply, code-execution, or test-execution interface. | IMPLEMENTED |
+| `coding/mock.py` | `MockCodingProvider` | Deterministic offline mock with optional sanitized failure/timeout simulation. It only consumes supplied snapshots and returns proposals/plans; it has no filesystem, network, process, compiler, or test-run capability. | IMPLEMENTED |
 | `agent.py` | `Agent` | Facade wiring planner + registry + permissions + events + executor into canonical `run(request)`. Voice uses the same loop once; Phase 6 computer, Phase 7 vision, and Phase 9 browser tools are opt-in with explicitly supplied providers. Browser tools share the Agent's event bus and permission manager. | IMPLEMENTED |
 
 Entry point: `apps/backend/src/main.py` (demo, mock provider by default, no API key).
@@ -244,6 +249,24 @@ egress controls. The Playwright Python extra does not download Chromium, and
 ordinary CI uses only the mock provider (no internet or browser binary).
 Unrestricted autonomous browsing, CAPTCHA/anti-bot bypass, credential
 harvesting, and authenticated profile reuse are not provided.
+
+### Coding foundation (Phase 10, Step 1 — IMPLEMENTED)
+
+`agent_core.coding` defines bounded project/file/region, analysis, edit-proposal,
+test-plan, patch, and metadata-only observation models; `CodingProvider`;
+`CodingLimits` from `CODING_*` settings; content-free structured errors; and a
+deterministic offline mock. All workspace-relative paths are checked through
+the existing `Workspace.resolve()` boundary and then constrained to the
+resolved project root. Proposed full-file replacements carry the original
+SHA-256 and size as preconditions. The patch validation record is advisory and is not
+trusted as proof.
+
+This step has no coding runtime or registered tools. It does not write/apply
+patches, run tests/builds/compilers, install packages, launch commands, access
+the network, or connect a real model. Test plans carry no executable command
+and always report `execution_performed=False`. The configured analysis-time
+bound can validate reported elapsed time; actual wall-clock enforcement awaits
+a later runtime. Future writes must use the existing permission system.
 
 ## 4. Key design decisions
 
@@ -455,6 +478,14 @@ Each decision lists the *why*, per the AGENTS.md rule to document decisions.
   isolation must enforce network egress controls. No arbitrary JavaScript,
   cookie/storage/profile API, challenge bypass, or unrestricted browser agent
   exists in this phase.
+- **D24 — Coding starts as a proposal-only provider seam.** Phase 10 Step 1
+  accepts bounded source snapshots, treats all repository/provider text as
+  untrusted, and represents edits as full-file replacements with source-hash
+  preconditions. Reusing `Workspace.resolve()` keeps path safety in one place.
+  There is no coding runtime, disk write, command/test execution, or real
+  provider, so analysis/planning cannot acquire an execution capability by
+  implication. Any later write must be a separate explicit operation and use
+  the existing permission system.
 
 ---
 
@@ -477,7 +508,9 @@ These are **NOT IMPLEMENTED** and must not be added prematurely
   Phase 9 adds only fixed browser operations in D23. The Playwright URL checks
   are not a domain/SSRF allowlist. There is no shell, process launch, arbitrary
   code execution, remote desktop, screenshot persistence, or generic computer
-  or browser action tool.
+  or browser action tool. Phase 10 Step 1 has coding contracts and a mock only;
+  a coding runtime, patch application, source writes, and test/build execution
+  are NOT IMPLEMENTED.
 - Output verification beyond "all steps completed" (a richer `Verifier`).
 - Human-facing approval channel (CLI prompt / UI); a synchronous approval
   callback protocol exists and is fail-safe.

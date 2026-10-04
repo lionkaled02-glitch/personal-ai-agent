@@ -4,8 +4,9 @@ The only importable package in this repository. It contains the Phase 0
 foundation, the Phase 1 model layer, the Phase 2 tool layer, the Phase 3
 workspace layer, the Phase 4 document layer, the Phase 5 memory & RAG layer,
 the Phase 6 safe computer foundation, the Phase 7 Vision & Visual
-Verification layer, the Phase 8 Voice Agent Foundation, and the Phase 9
-Browser Agent Foundation of the personal AI agent. It includes the task state model,
+Verification layer, the Phase 8 Voice Agent Foundation, the Phase 9
+Browser Agent Foundation, and the Phase 10 Coding Agent core foundation of
+the personal AI agent. It includes the task state model,
 planner, executor, tool system with registry, permission manager, structured
 event bus, a
 vendor-neutral `ModelProvider` interface with a `ModelGateway` (error
@@ -109,6 +110,14 @@ and the **memory & RAG foundation** (Phase 5):
   is untrusted data, never instructions. This is not unrestricted autonomous
   browsing, CAPTCHA/anti-bot bypass, credential harvesting, arbitrary
   JavaScript, or profile reuse.
+- **Coding Agent core foundation (Phase 10, Step 1)** — `agent_core.coding`
+  provides strict bounded project/file/region, analysis, structural patch,
+  test-plan, and metadata-only observation models; a provider-neutral
+  `CodingProvider`; `CODING_*` limits; content-safe errors; and an offline
+  deterministic mock. Resolve paths through the existing `Workspace` before
+  use. Changes are proposals only: this step adds no file writes, commands,
+  compilers, package installation, test/build execution, tools/runtime, or
+  real model integration. Repository and provider text remain untrusted data.
 
 To opt in with the Windows provider, install the extra on Windows and pass
 an explicit provider. MEDIUM interactions are denied unless the existing

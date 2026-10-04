@@ -71,10 +71,17 @@ Variables:
   ``VOICE_MAX_VOICE_NAME_CHARS`` / ``VOICE_MAX_SYNTHESIS_TEXT_CHARS``
 - ``VOICE_MAX_TRANSCRIPTION_TIME_S`` / ``VOICE_MAX_SYNTHESIS_TIME_S`` /
   ``VOICE_MAX_RETRIES`` / ``VOICE_MIN_TRANSCRIPTION_CONFIDENCE``
+- ``CODING_MAX_PROJECT_FILES`` / ``CODING_MAX_FILE_SIZE_BYTES`` /
+  ``CODING_MAX_SOURCE_CHARS`` / ``CODING_MAX_PATCH_SIZE_BYTES`` /
+  ``CODING_MAX_CHANGED_FILES`` / ``CODING_MAX_SYMBOLS`` /
+  ``CODING_MAX_REGIONS`` / ``CODING_MAX_DIAGNOSTICS`` /
+  ``CODING_MAX_ANALYSIS_TIME_S`` / ``CODING_MAX_TEST_DURATION_S`` /
+  ``CODING_MAX_OUTPUT_BYTES`` (Phase 10 bounded coding foundation)
 
 Voice time limits are cooperative because synchronous provider calls cannot
 be forcibly interrupted. Phase 8 adds no microphone hardware, API keys, or
-external STT/TTS provider.
+external STT/TTS provider. Phase 10 adds bounded coding data contracts and a
+local mock only; it adds no source writes, command execution, or real provider.
 
 ``DATA_ROOT`` holds logs and task artifacts; it is independent of the
 workspace boundary, which the Phase 3 filesystem tools enforce strictly.
@@ -176,6 +183,18 @@ class Settings(BaseModel):
     browser_max_action_time_s: float = 5.0
     browser_max_wait_time_s: float = 5.0
     browser_max_retries: int = 1
+    # Coding Agent foundation (Phase 10, Step 1) — data/plan bounds only.
+    coding_max_project_files: int = 100
+    coding_max_file_size_bytes: int = 524_288
+    coding_max_source_chars: int = 500_000
+    coding_max_patch_size_bytes: int = 262_144
+    coding_max_changed_files: int = 20
+    coding_max_symbols: int = 200
+    coding_max_regions: int = 100
+    coding_max_diagnostics: int = 100
+    coding_max_analysis_time_s: float = 20.0
+    coding_max_test_duration_s: float = 120.0
+    coding_max_output_bytes: int = 262_144
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Settings:
@@ -399,6 +418,35 @@ class Settings(BaseModel):
             ),
             browser_max_retries=int(
                 source.get("BROWSER_MAX_RETRIES", defaults.browser_max_retries)
+            ),
+            coding_max_project_files=int(
+                source.get("CODING_MAX_PROJECT_FILES", defaults.coding_max_project_files)
+            ),
+            coding_max_file_size_bytes=int(
+                source.get("CODING_MAX_FILE_SIZE_BYTES", defaults.coding_max_file_size_bytes)
+            ),
+            coding_max_source_chars=int(
+                source.get("CODING_MAX_SOURCE_CHARS", defaults.coding_max_source_chars)
+            ),
+            coding_max_patch_size_bytes=int(
+                source.get("CODING_MAX_PATCH_SIZE_BYTES", defaults.coding_max_patch_size_bytes)
+            ),
+            coding_max_changed_files=int(
+                source.get("CODING_MAX_CHANGED_FILES", defaults.coding_max_changed_files)
+            ),
+            coding_max_symbols=int(source.get("CODING_MAX_SYMBOLS", defaults.coding_max_symbols)),
+            coding_max_regions=int(source.get("CODING_MAX_REGIONS", defaults.coding_max_regions)),
+            coding_max_diagnostics=int(
+                source.get("CODING_MAX_DIAGNOSTICS", defaults.coding_max_diagnostics)
+            ),
+            coding_max_analysis_time_s=float(
+                source.get("CODING_MAX_ANALYSIS_TIME_S", defaults.coding_max_analysis_time_s)
+            ),
+            coding_max_test_duration_s=float(
+                source.get("CODING_MAX_TEST_DURATION_S", defaults.coding_max_test_duration_s)
+            ),
+            coding_max_output_bytes=int(
+                source.get("CODING_MAX_OUTPUT_BYTES", defaults.coding_max_output_bytes)
             ),
         )
 

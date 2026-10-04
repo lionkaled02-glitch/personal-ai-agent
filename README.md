@@ -78,6 +78,12 @@ This repository currently contains:
   `VERIFIED`/`FAILED`/`UNCERTAIN`. Deterministic mocks keep CI offline;
   Playwright is optional and never downloads browser binaries during core
   installation. This is not unrestricted autonomous browsing.
+- **Phase 10: Coding Agent core foundation (Step 1 only)** — bounded
+  provider-neutral project, source, analysis, structural patch, and test-plan
+  models; workspace-backed path validation; `CODING_*` limits; and a
+  deterministic offline mock. Source and repository text remain untrusted
+  data. There is no source write/apply operation, shell/command use, compiler,
+  package installation, test/build execution, or real model integration.
 
 Everything else (tools beyond the workspace boundary, generic web fetch/search,
 unrestricted browser automation, real microphone capture, external/cloud STT/TTS, media,

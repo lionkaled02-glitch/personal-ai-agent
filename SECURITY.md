@@ -46,8 +46,9 @@ later) are modeled in the state machine but **NOT IMPLEMENTED** yet.
 - **Environment-based config only.** Non-secret tunables flow through
   `agent_core.config.Settings`, which reads plain environment variables
   (`AGENT_NAME`, `LOG_LEVEL`, `DATA_ROOT`, `MODEL_PROVIDER`, `MODEL_NAME`,
-  `MODEL_TIMEOUT_S`, `MODEL_MAX_RETRIES`, and non-secret `BROWSER_*` resource
-  limits, alongside workspace/document/memory/computer/vision/voice bounds).
+  `MODEL_TIMEOUT_S`, `MODEL_MAX_RETRIES`, and non-secret `BROWSER_*` and
+  `CODING_*` resource limits, alongside workspace/document/memory/computer/
+  vision/voice bounds).
 - **`Settings` is secret-free by design.** Provider *credentials*
   (`OPENAI_API_KEY`) are read from the environment by the provider factory
   at construction time, passed straight to the vendor SDK, and never stored
@@ -111,6 +112,8 @@ provider can access HTTP(S) sites and therefore adds real network egress.
 Phase 8 `VoiceRuntime` providers are also explicit in-process dependencies;
 the built-in voice mocks use no hardware, network access, or keys. Voice
 transcripts and browser page content never grant permissions by themselves.
+Phase 10 Step 1 adds a coding provider contract and offline mock only; it is
+not wired into `Agent` and has no write or execution path.
 
 ### Tool runtime security (Phase 2)
 
@@ -659,6 +662,32 @@ not download Chromium or enable browser use by itself.
   approval interface. Deployments must use their own network controls and
   approval UI/callback as appropriate.
 
+### Coding foundation security (Phase 10, Step 1)
+
+The coding package is data contracts plus an offline mock, not a coding agent
+runtime. Source/repository text and any future test-output text are untrusted
+data and never change policy or permissions. Provider methods receive bounded
+in-memory snapshots; only `MockCodingProvider` exists in this step.
+
+- **Path boundary.** Project roots and file/patch targets are resolved by the
+  existing `Workspace.resolve()` (including its symlink/junction protections),
+  then checked against the canonical project root. Coding models do not open
+  files. There is no parallel filesystem layer.
+- **Patch boundary.** Changes are full-file replacement proposals with the
+  original SHA-256 and byte size as preconditions. Provider-supplied
+  validation status is advisory. No code writes or applies a patch in Step 1;
+  a future write path must revalidate the live source and use existing
+  permission policy.
+- **No execution.** Test plans have no command field and enforce
+  `execution_performed=False`. The package has no shell/process, compiler,
+  package-installer, test/build runner, arbitrary code execution, network, or
+  generic run-code capability.
+- **Bounds and limitation.** `CODING_*` settings are hard-clamped for project
+  files, per-file bytes, total source chars, patches, changed files, symbols,
+  regions, diagnostics, analysis time, test duration, and output bytes. Step 1
+  validates reported elapsed time but has no runtime to measure or interrupt a
+  blocked provider call.
+
 ---
 
 ## 5. Reporting
@@ -737,5 +766,8 @@ issue (do not post secrets or proof-of-concept exploit details publicly).
 | Persistent, redaction-aware audit log | PLANNED (Phase 12) |
 | Broader, separately reviewed computer workflows | NOT IMPLEMENTED (future; explicit named operations only) |
 | Bounded Phase 9 browser foundation (fixed tools, opt-in provider, bounded permissions/verification) | IMPLEMENTED |
+| Phase 10 Step 1 coding models/provider contract/mock; no runtime or real provider | IMPLEMENTED |
+| Coding source/path bounds through `Workspace`, hash-precondition proposals, metadata-only observations | IMPLEMENTED |
+| Coding write/apply, shell/process, arbitrary code, compiler, package install, test/build execution | NOT IMPLEMENTED (explicitly excluded) |
 | Unrestricted browser autonomy, host allowlist, and SSRF/DNS-rebinding defense | NOT IMPLEMENTED (documented limitation) |
 | UI/API authentication | NOT IMPLEMENTED (Phase 12) |

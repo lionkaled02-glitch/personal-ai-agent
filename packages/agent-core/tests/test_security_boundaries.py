@@ -1,4 +1,4 @@
-"""Safety-boundary tests (Phases 2 and 5).
+"""Safety-boundary tests (Phases 2, 5, and 10).
 
 Two complementary guards:
 
@@ -16,6 +16,9 @@ Two complementary guards:
    secret-like content atomically; expired memories are excluded; nothing is
    auto-persisted from conversation; memory operations respect the
    permission system.
+4. **Coding foundation (Phase 10, Step 1)**: the coding package is offline
+   data/proposal planning only, resolves paths through `Workspace`, and has
+   no write, command, network, compiler, or test-execution capability.
 
 These tests run fully offline.
 """
@@ -218,6 +221,76 @@ class TestStaticSourceBoundaries:
                         if optional_windows.intersection(names):
                             offenders.append(f"{path.name}: eager optional import {names}")
         assert offenders == [], f"unsafe computer dependency boundary: {offenders}"
+
+    def test_coding_layer_is_offline_data_only_and_has_no_write_or_execution_api(self) -> None:
+        """Phase 10 Step 1 introduces data contracts, not a code runner."""
+        import sys
+
+        coding_root = SRC / "coding"
+        allowed_third_party = {"pydantic"}
+        forbidden_calls = {
+            "open",
+            "eval",
+            "exec",
+            "compile",
+            "__import__",
+            "system",
+            "popen",
+            "write_text",
+            "write_bytes",
+            "unlink",
+            "mkdir",
+            "rmdir",
+            "remove",
+            "rename",
+            "replace",
+            "run",
+            "run_code",
+            "run_tests",
+            "run_command",
+            "apply_patch",
+        }
+        offenders: list[str] = []
+        for path in sorted(coding_root.rglob("*.py")):
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imported = [alias.name for alias in node.names]
+                    for name in imported:
+                        top = name.split(".")[0]
+                        if top not in sys.stdlib_module_names and top not in {
+                            "agent_core",
+                            *allowed_third_party,
+                        }:
+                            offenders.append(f"{path.name}: import {name}")
+                elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                    top = node.module.split(".")[0]
+                    if top not in sys.stdlib_module_names and top not in {
+                        "agent_core",
+                        *allowed_third_party,
+                    }:
+                        offenders.append(f"{path.name}: import {node.module}")
+                if isinstance(node, ast.Call):
+                    function = node.func
+                    called_name = (
+                        function.id
+                        if isinstance(function, ast.Name)
+                        else function.attr
+                        if isinstance(function, ast.Attribute)
+                        else ""
+                    )
+                    if called_name in forbidden_calls:
+                        offenders.append(f"{path.name}: call {called_name}")
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in {
+                    "run_code",
+                    "run_tests",
+                    "run_command",
+                    "apply_patch",
+                    "write_file",
+                }:
+                    offenders.append(f"{path.name}: execution/write API {node.name}")
+        assert offenders == [], f"unsafe coding foundation: {offenders}"
 
     def test_browser_provider_imports_playwright_only_on_explicit_launch(self) -> None:
         import sys

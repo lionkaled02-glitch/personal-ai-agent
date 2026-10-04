@@ -408,13 +408,41 @@ installation and CI do not import Playwright or require browser binaries.
 
 ---
 
-## Phase 10 — Extended Computer Workflows (future)
+## Phase 10 — Coding Agent Foundation (Step 1) ✅ IMPLEMENTED
+
+This step establishes bounded provider-neutral data contracts only. Code and
+repository text are untrusted data; paths use the existing `Workspace`
+containment/symlink boundary. The deterministic mock is offline.
+
+| Item | Status |
+| --- | --- |
+| `coding/` project/file/region, analysis/edit, structural patch, test-plan, and observation models | IMPLEMENTED |
+| `CodingProvider`, hard-clamped `CodingLimits`, safe errors, and deterministic mock | IMPLEMENTED |
+| Workspace-backed path resolution, project containment, original-hash patch preconditions | IMPLEMENTED |
+| `CODING_*` environment configuration and bounded output/result validation | IMPLEMENTED |
+| Coding runtime/tools, source writes or patch application | NOT IMPLEMENTED (outside Step 1) |
+| Shell/process/command use, arbitrary execution, compilers, package installation, test/build execution, real model providers | NOT IMPLEMENTED (explicitly excluded) |
+
+**Acceptance:** proposed replacements remain structured data and are checked
+against the supplied source hash/size; the mock never accesses or modifies
+workspace paths; test plans cannot report execution; configured limits reject
+oversized input and output; project/file targets are resolved by `Workspace` and constrained
+to the project root. No earlier phase grants command or arbitrary-code access.
+
+**Known limitation:** Step 1 has no coding runtime to load workspace files,
+measure provider wall-clock time, enforce permissions on a write, or apply a
+patch. Analysis-time bounds validate reported elapsed time only. A later write
+path must use the existing permission system and revalidate the patch against
+the live workspace.
+
+---
+
+## Future — Extended Computer Workflows (phase unassigned)
 
 Phase 6 and Phase 7 provide a conservative desktop foundation and pixel-level
-verification only. Future work, if separately approved, must extend that
-surface with explicit tools and retain the same least-privilege, semantic
-postcondition, and privacy guarantees; Phase 10 is not permission to add
-generic control.
+verification only. Any future extension requires separate approval, explicit
+named tools, least privilege, semantic postconditions, and privacy review; it
+is not permission to add generic control.
 
 | Item | Status |
 | --- | --- |
@@ -424,8 +452,7 @@ generic control.
 | Persistent, redaction-aware audit trail (Phase 12 task/event persistence) | NOT IMPLEMENTED |
 | Remote desktop/network control, shell/PowerShell, arbitrary code/actions | NOT IMPLEMENTED (excluded by current safety scope) |
 
-No earlier phase grants shell access or unrestricted OS control. The Phase 6
-adapter never launches processes and exposes no generic arbitrary-action tool.
+The Phase 6 adapter never launches processes and exposes no generic arbitrary-action tool.
 
 ---
 
