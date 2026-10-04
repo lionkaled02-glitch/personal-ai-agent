@@ -35,6 +35,9 @@ computer-windows = [
     "pywin32>=306,<312; platform_system == 'Windows'",
     "Pillow>=10,<13; platform_system == 'Windows'",
 ]
+# Optional Phase 9 provider. Installing the Python extra does not download
+# Chromium; browser binaries are an explicit, separate local setup step.
+browser-playwright = ["playwright>=1.44,<2"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agent_core"]

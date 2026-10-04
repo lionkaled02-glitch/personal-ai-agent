@@ -4,8 +4,8 @@ The only importable package in this repository. It contains the Phase 0
 foundation, the Phase 1 model layer, the Phase 2 tool layer, the Phase 3
 workspace layer, the Phase 4 document layer, the Phase 5 memory & RAG layer,
 the Phase 6 safe computer foundation, the Phase 7 Vision & Visual
-Verification layer, and the Phase 8 Voice Agent Foundation of the personal
-AI agent. It includes the task state model,
+Verification layer, the Phase 8 Voice Agent Foundation, and the Phase 9
+Browser Agent Foundation of the personal AI agent. It includes the task state model,
 planner, executor, tool system with registry, permission manager, structured
 event bus, a
 vendor-neutral `ModelProvider` interface with a `ModelGateway` (error
@@ -94,6 +94,22 @@ and the **memory & RAG foundation** (Phase 5):
   provider, API key, or audio storage is included. The mock TTS output is
   silent PCM test data, not speech.
 
+- **Browser Agent Foundation (Phase 9)** — provider-neutral `BrowserProvider`,
+  strict bounded models/limits, `BrowserRuntime`, safe HTTP(S) URL validation,
+  redaction, verification/recovery, deterministic offline mock, and optional
+  lazy Playwright adapter. Nineteen fixed tools are registered only when an
+  explicit provider is supplied to `Agent.create_demo` or
+  `Agent.create_configured`. Each operation requires explicit session/page
+  IDs; no active tab is inferred. Observation/read/wait tools are LOW,
+  ordinary navigation and interaction are generally MEDIUM, and form submits
+  or externally consequential controls require HIGH approval. Sensitive
+  controls cannot be filled/selected; no raw HTML, screenshot bytes, or page
+  text is sent in normal events. `VERIFIED`/`FAILED`/`UNCERTAIN` results are
+  preserved, and uncertain actions do not become tool success. Page content
+  is untrusted data, never instructions. This is not unrestricted autonomous
+  browsing, CAPTCHA/anti-bot bypass, credential harvesting, arbitrary
+  JavaScript, or profile reuse.
+
 To opt in with the Windows provider, install the extra on Windows and pass
 an explicit provider. MEDIUM interactions are denied unless the existing
 approval callback returns `True`:
@@ -111,12 +127,35 @@ agent = Agent.create_configured(
 )
 ```
 
-Without an explicit provider, neither computer nor vision tools are
-registered. With one, `vision_analyze_screenshot` reuses its permission-gated
-Phase 6 screenshot path. Metadata-only analysis needs no image extra; local
-comparison of non-identical images uses the optional `vision-image` extra. The
-core remains importable off Windows; constructing the Windows adapter elsewhere
-raises a structured `UnsupportedPlatformError`.
+Without an explicit provider, browser, computer, and vision tools are not
+registered. With a computer provider, `vision_analyze_screenshot` reuses its
+permission-gated Phase 6 screenshot path. Metadata-only analysis needs no image
+extra; local comparison of non-identical images uses the optional
+`vision-image` extra. The core remains importable off Windows; constructing the
+Windows adapter elsewhere raises a structured `UnsupportedPlatformError`.
+
+To opt in to Playwright, install its Python extra and Chromium separately;
+core installation and offline CI do not install browser binaries:
+
+```bash
+pip install -e "packages/agent-core[browser-playwright]"
+playwright install chromium
+```
+
+```python
+from agent_core import Agent, PlaywrightBrowserProvider
+
+agent = Agent.create_configured(
+    approval=your_approval_callback,
+    browser_provider=PlaywrightBrowserProvider(),
+)
+```
+
+No provider launches until an explicit browser session is opened. The
+Playwright adapter uses new ephemeral contexts, closes popups, disables
+downloads, and does not load/save browser profiles. Its HTTP(S) URL checks
+are syntactic; deployment egress/network controls should still restrict local
+and private networks if that matters to the application.
 
 ## Extras
 
@@ -128,6 +167,9 @@ raises a structured `UnsupportedPlatformError`.
 - `agent-core[vision-image]` — optional Pillow support for local deterministic
   RGB comparison; imported lazily. Metadata-only observation and exact
   screenshot-payload matches work without it.
+- `agent-core[browser-playwright]` — optional Playwright Python provider; it
+  does not install Chromium. Run `playwright install chromium` separately only
+  when you explicitly choose to use the real provider.
 - `agent-core[computer-windows]` — Windows-only UI Automation dependencies
   (pywinauto, pywin32, Pillow), installed only on Windows. The module remains
   importable without this extra; provider construction then raises a

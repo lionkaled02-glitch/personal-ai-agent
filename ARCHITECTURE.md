@@ -43,17 +43,18 @@ dependency direction (a layer may depend only on layers below it).
 ```
 
 **What "PARTIAL" means on the bottom row:** provider *interfaces* exist
-(`ModelProvider`, `ComputerProvider`), the deterministic mock model provider
-is implemented, and the OpenAI adapter (optional extra) is implemented. A
-provider-neutral computer foundation and an optional Windows UI Automation
-adapter are implemented; browser automation and unrestricted computer
-control are not.
+(`ModelProvider`, `ComputerProvider`, `BrowserProvider`), the deterministic
+mock model provider is implemented, and the OpenAI adapter (optional extra) is
+implemented. Provider-neutral computer and browser foundations exist, with
+optional Windows UI Automation and Playwright adapters; unrestricted browser
+or computer control does not.
 
 The implemented portion is the middle band: **Orchestrator → Planner →
 Model Gateway → Provider → Tool Registry → Permission**, plus the opt-in
 Phase 6 computer runtime, the Phase 7 visual layer over its screenshot path,
-and the Phase 8 voice transport into the same Agent loop. The events backbone
-runs alongside all of it.
+the Phase 8 voice transport, and the Phase 9 bounded browser runtime. These
+capabilities use the same Agent loop and permission system. The events
+backbone runs alongside all of it.
 
 ---
 
@@ -71,13 +72,13 @@ All implemented code lives in the single package
 | `tool_runtime.py` | `ToolRuntime`, `ToolInvocation` | The agent's only tool-execution path: requires an explicit ALLOWED permission decision (backstop), runs the registry's validate→run→validate pipeline, attaches execution metadata, emits tool lifecycle events, and redacts sensitive computer tool inputs/outputs plus all voice-mode tool I/O from events. Provider-independent. | IMPLEMENTED |
 | `schema.py` | `validate_against_schema` | Minimal JSON-Schema (subset) validator: `type`, `properties`, `required`, `items`, `enum`. | IMPLEMENTED |
 | `permissions.py` | `PermissionLevel`, `PermissionPolicy`, `PermissionManager`, `ApprovalCallback` | Level-based policy decisions and fail-safe approval routing; a private, exact-tool authorization scope lets explicitly registered computer tools reuse the executor's existing approval without widening privileges. | IMPLEMENTED |
-| `events.py` | `EventType`, `AgentEvent`, `EventBus`, `bounded_text`, `bounded_value` | Structured, in-memory event log + subscribers. Operational data only; `bounded_value` caps large tool I/O, computer outputs and typed-text inputs are redacted, computer lifecycle events carry bounded status/metadata, and vision events never carry screenshot bytes or labels; Phase 8 voice events carry metadata only and omit transcripts/audio payloads. | IMPLEMENTED |
+| `events.py` | `EventType`, `AgentEvent`, `EventBus`, `bounded_text`, `bounded_value` | Structured, in-memory event log + subscribers. Operational data only; `bounded_value` caps large tool I/O, computer outputs and typed-text inputs are redacted, computer lifecycle events carry bounded status/metadata, and vision events never carry screenshot bytes or labels; Phase 8 voice and Phase 9 browser events carry metadata only and omit transcripts, page contents, form values, and screenshot payloads. | IMPLEMENTED |
 | `providers/base.py` | `ModelProvider`, `ModelRequest`, `ModelResponse`, `Capability` | Vendor-neutral model interface. `stream`/`embed` are declared but raise until an adapter implements them. | IMPLEMENTED |
 | `providers/mock.py` | `MockModelProvider` | Deterministic in-memory provider (scripted or keyword mode). No network, no key. Default provider. | IMPLEMENTED |
 | `providers/gateway.py` | `ModelGateway` | `ModelProvider` decorator: normalizes provider errors, retries transient failures with bounded exponential backoff, passes structured responses through unchanged. Vendor-agnostic. | IMPLEMENTED |
 | `providers/factory.py` | `create_provider`, `build_gateway`, `SUPPORTED_PROVIDERS` | Configuration-driven provider selection (`MODEL_PROVIDER`) + gateway construction. The only place that knows provider names. | IMPLEMENTED |
 | `providers/openai_provider.py` | `OpenAIProvider` | Real Chat Completions adapter (optional `openai` extra, lazy SDK import). Env credentials, timeouts, sanitized error mapping. | IMPLEMENTED |
-| `config.py` | `Settings` | Env-based configuration (`AGENT_NAME`, `LOG_LEVEL`, `DATA_ROOT`, `MODEL_PROVIDER`, `MODEL_NAME`, `MODEL_TIMEOUT_S`, `MODEL_MAX_RETRIES`, `WORKSPACE_ROOT`, `WORKSPACE_MAX_*` limits, `DOCUMENT_MAX_*` / `DOCUMENT_CHUNK_*` limits, `MEMORY_*` limits/TTLs, `COMPUTER_*`, `VISION_*`, and `VOICE_*` limits). No secrets. | IMPLEMENTED |
+| `config.py` | `Settings` | Env-based configuration (`AGENT_NAME`, `LOG_LEVEL`, `DATA_ROOT`, model/workspace/document/memory settings, `COMPUTER_*`, `VISION_*`, `VOICE_*`, and bounded `BROWSER_*` limits). No secrets. | IMPLEMENTED |
 | `demo_tools.py` | `DemoTool` | The demo tool (`demo_tool`, LOW permission) used to prove the end-to-end flow. | IMPLEMENTED |
 | `builtin_tools/` | `CalculatorTool`, `DateTimeTool`, `TextUtilsTool`, `JsonUtilsTool`, `register_default_tools` | Safe, deterministic, side-effect-free built-in tools (all LOW permission, bounded input). Date/time is declared non-deterministic. No shell/network. | IMPLEMENTED |
 | `workspace.py` | `Workspace`, `WorkspaceError`, `WorkspaceLimits` | The workspace boundary: turns model-supplied (workspace-relative) paths into real filesystem paths with fail-closed resolution (no absolute paths, no `../` escape, no symlink/junction escape, no host-path leakage). | IMPLEMENTED |
@@ -108,7 +109,11 @@ All implemented code lives in the single package
 | `voice/models.py`, `voice/limits.py`, `voice/interfaces.py` | `AudioInput`, `TranscriptionResult`, `SynthesisRequest`, `SynthesisResult`, `VoiceLimits`, `STTProvider`, `TTSProvider` | Strict PCM/audio metadata and text models with hard caps; payloads are ephemeral and excluded from repr/serialization. No microphone, network, or vendor SDK. | IMPLEMENTED |
 | `voice/runtime.py`, `voice/normalization.py` | `VoiceRuntime`, `normalize_transcription_text`, `AgentHandoff` | Bounded STT → NFC/whitespace normalization → exactly one canonical `Agent.run(..., input_channel="voice")` handoff → optional TTS; explicit uncertainty/failures and cooperative timeouts. Voice never bypasses existing permissions. | IMPLEMENTED |
 | `voice/mock.py`, `voice/serialization.py`, `voice/tools.py` | `MockSTTProvider`, `MockTTSProvider`, explicit metadata projections, optional `voice_normalize` | Deterministic offline test providers, payload-free serialization, and one opt-in LOW text-only tool with sensitive event redaction. | IMPLEMENTED |
-| `agent.py` | `Agent` | Facade that wires planner + registry + permissions + events + executor (+ knowledge store + memory store + context builder) into the canonical `run(request)` flow. `run(..., input_channel="voice")` redacts transcript-derived inputs, outputs, results, and error details from task/plan/tool lifecycle events without changing planning or permissions. Plan tool names are allow-listed. Phase 6 computer and Phase 7 visual tools remain opt-in; Phase 8 `VoiceRuntime` calls this same flow once. | IMPLEMENTED |
+| `browser/models.py`, `browser/limits.py`, `browser/interfaces.py` | Strict browser records/requests, `BrowserLimits`, `BrowserProvider` | Bounded, extra-forbidden models, explicit session/page IDs, HTTP(S)-only URL constraints, allowlisted element metadata, and a provider contract with no generic action/script or cookie/storage APIs. | IMPLEMENTED |
+| `browser/runtime.py`, `browser/verification.py`, `browser/recovery.py` | `BrowserRuntime`, explicit named operations, `VERIFIED`/`FAILED`/`UNCERTAIN`, safe recovery | Shared permission/event integration; observe → authorize → act → fresh observe → verify; sensitive-control blocking, page-text redaction, exact named-page targeting, one bounded navigation retry only for explicitly retryable safe failures, no high-risk retries. | IMPLEMENTED |
+| `browser/mock.py`, `browser/playwright_provider.py` | `MockBrowserProvider`, `PlaywrightBrowserProvider` | Deterministic offline provider; optional Playwright sync provider loaded only at launch, with new ephemeral contexts, no profile persistence, scheme checks on navigations, and bounded text/elements/screenshots. Playwright binaries are separate from the Python extra. | IMPLEMENTED |
+| `browser/serialization.py`, `browser/tools.py` | Safe projections, `BROWSER_TOOL_NAMES`, `register_browser_tools` | Fixed explicit LOW/MEDIUM/HIGH-classified tools; sensitive Tool Runtime I/O is event-redacted. `BrowserActionResult` uncertainty/failure is not reported as tool success. No arbitrary browser action dispatcher. | IMPLEMENTED |
+| `agent.py` | `Agent` | Facade wiring planner + registry + permissions + events + executor into canonical `run(request)`. Voice uses the same loop once; Phase 6 computer, Phase 7 vision, and Phase 9 browser tools are opt-in with explicitly supplied providers. Browser tools share the Agent's event bus and permission manager. | IMPLEMENTED |
 
 Entry point: `apps/backend/src/main.py` (demo, mock provider by default, no API key).
 
@@ -194,6 +199,51 @@ are offline; there is no microphone capture, audio hardware dependency, real
 STT/TTS adapter, or API-key requirement in this phase.
 
 ---
+
+### Browser operations (Phase 9, IMPLEMENTED)
+
+Browser support is opt-in: `Agent.create_demo` and `Agent.create_configured`
+register the nineteen fixed browser tools only when a `BrowserProvider` is
+explicitly supplied. They reuse the Agent's `PermissionManager`, Tool Runtime,
+and `EventBus`. The default setup creates no browser provider, does not launch
+Playwright, and does not register browser tools. `MockBrowserProvider` is the
+deterministic offline test/example adapter; `PlaywrightBrowserProvider` is
+optional and imports `playwright.sync_api` only from `launch()`.
+
+Every request names a browser `session_id` and, for page operations, an
+explicit `page_id`; there is no arbitrary active-tab selection. Sessions use
+fresh ephemeral contexts and pages, and the Playwright provider does not load
+or persist profiles. Its fixed operations include observation, safe URL/title
+reads, bounded element lookup/waiting, HTTP(S) navigation, history/reload,
+click, non-sensitive fill/select, and an explicit key allowlist. The tools do
+not expose arbitrary selectors, browser JavaScript, shell/process/filesystem,
+cookie/storage, or profile operations.
+
+The browser lifecycle is **bounded observation → permission/confirmation →
+action → fresh observation → verification → safe recovery**. Read, observe,
+list, and wait operations are LOW; routine navigation and interaction are
+MEDIUM. Form-submit elements, detected externally consequential controls, and
+Enter require HIGH confirmation at the runtime boundary. High-risk and
+non-idempotent actions never retry. Only a retryable navigation failure may
+use the small configured retry budget; timeouts/uncertainty remain
+`UNCERTAIN`, and browser tool failures are not treated as successful Agent
+steps.
+
+Page titles, visible text, accessible names, form metadata, and embedded page
+content are untrusted data. Observations are bounded and explicitly marked
+`untrusted_content`; sensitive controls are redacted and cannot be filled or
+selected. Input text, page text, URLs, and action outputs are redacted from
+normal events. Browser screenshots, when explicitly requested and validated
+through the existing VisionRuntime boundary, return metadata only; bytes are
+not included in browser observations/events or persisted. URL checks reject
+non-HTTP(S), malformed, credential-bearing, and over-limit URLs, and browser
+requests/downloads/popups are constrained by the Playwright adapter. These are
+syntax/scheme controls, **not a domain allowlist or an SSRF/DNS-rebinding
+defense**: deployments that must isolate private networks need network-level
+egress controls. The Playwright Python extra does not download Chromium, and
+ordinary CI uses only the mock provider (no internet or browser binary).
+Unrestricted autonomous browsing, CAPTCHA/anti-bot bypass, credential
+harvesting, and authenticated profile reuse are not provided.
 
 ## 4. Key design decisions
 
@@ -388,6 +438,23 @@ Each decision lists the *why*, per the AGENTS.md rule to document decisions.
   bounded, in-memory, and excluded from repr/serialization/events. There is no
   microphone capture, permanent audio storage, cloud upload, real STT/TTS
   adapter, or new permission bypass. Synchronous timeouts are cooperative.
+- **D23 — Browser access is an opt-in, bounded provider surface; page content is data.**
+  Phase 9 exposes only fixed named browser tools over explicit ephemeral
+  session/page IDs, registered when an application supplies a
+  `BrowserProvider`. Read/observe/wait operations remain LOW, ordinary
+  navigation and interactions are MEDIUM, and externally consequential
+  controls require HIGH confirmation at the runtime boundary. Every action
+  follows fresh observation → existing permission/approval → action → fresh
+  observation → deterministic verification; uncertainty remains
+  `UNCERTAIN` and cannot complete a browser tool/Agent step. Sensitive form
+  controls are redacted and cannot be filled; sensitive input/output and page
+  content are excluded from ordinary events. The Playwright extra is optional,
+  lazy, and does not install browser binaries. URL validation enforces bounded
+  HTTP(S) syntax and rejects credentials/special schemes, but it is not a host
+  allowlist or SSRF/DNS-rebinding defense; deployments needing private-network
+  isolation must enforce network egress controls. No arbitrary JavaScript,
+  cookie/storage/profile API, challenge bypass, or unrestricted browser agent
+  exists in this phase.
 
 ---
 
@@ -402,18 +469,23 @@ These are **NOT IMPLEMENTED** and must not be added prematurely
   implemented).
 - Native strict `json_schema` output mode (the openai adapter uses
   `json_object` mode; see decision D11).
-- Side-effecting tools *beyond the workspace boundary*: web fetch/search,
-  browser automation, semantic vision/OCR, remote vision APIs/cloud upload,
-  and unrestricted computer control remain NOT IMPLEMENTED. Phase 3's
-  filesystem tools are scoped to `WORKSPACE_ROOT`; Phase 6 adds only the
-  explicit bounded computer foundation in D20, and Phase 7 adds only local
-  pixel-level verification in D21. There is no shell, process launch,
-  arbitrary code execution, remote desktop, screenshot persistence, or generic
-  computer action tool.
+- Generic web fetch/search tools, unrestricted autonomous browser use,
+  semantic vision/OCR, remote vision APIs/cloud upload, and unrestricted
+  computer control remain NOT IMPLEMENTED. Phase 3's filesystem tools are
+  scoped to `WORKSPACE_ROOT`; Phase 6 adds only the explicit bounded computer
+  foundation in D20; Phase 7 adds only local pixel-level verification in D21;
+  Phase 9 adds only fixed browser operations in D23. The Playwright URL checks
+  are not a domain/SSRF allowlist. There is no shell, process launch, arbitrary
+  code execution, remote desktop, screenshot persistence, or generic computer
+  or browser action tool.
 - Output verification beyond "all steps completed" (a richer `Verifier`).
 - Human-facing approval channel (CLI prompt / UI); a synchronous approval
   callback protocol exists and is fail-safe.
-- Browser automation (Phase 9), real microphone capture, external/cloud STT/TTS providers, semantic vision models/OCR, and remote vision APIs/cloud image upload. Phase 8's voice runtime and offline mocks are IMPLEMENTED; only actual audio hardware and external providers remain out of scope.
+- Real microphone capture, external/cloud STT/TTS providers, semantic vision
+  models/OCR, and remote vision APIs/cloud image upload remain out of scope.
+  Phase 8 voice and the bounded Phase 9 browser foundations are implemented;
+  only actual audio hardware, unrestricted browsing, and external voice
+  providers remain future work.
 - Image/video generation and presentation/document *generation*. (Reading &
   analyzing existing documents — TXT/MD/PDF/DOCX/PPTX/XLSX — is IMPLEMENTED
   in Phase 4; producing new documents is not.)

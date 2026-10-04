@@ -13,8 +13,8 @@ Every tool declares a `permission_level` on its `ToolSpec`:
 | Level | Meaning (intended) | Default handling |
 | --- | --- | --- |
 | `LOW` | Read-only/harmless operations, including bounded screen and UI observations | `ALLOWED` automatically |
-| `MEDIUM` | Scoped mutations and explicit computer interaction (mouse, focus, selection, keyboard) | `REQUIRES_APPROVAL` |
-| `HIGH` | Destructive or externally consequential actions (e.g. `delete_file`; any future high-impact computer operation) | `REQUIRES_APPROVAL` (stricter by policy) |
+| `MEDIUM` | Scoped mutations and explicit computer/browser interaction (including ordinary browser navigation and non-sensitive form interaction) | `REQUIRES_APPROVAL` |
+| `HIGH` | Destructive or externally consequential actions (e.g. `delete_file`, browser form submission, purchase/send/publish/security changes) | `REQUIRES_APPROVAL` (stricter by policy) |
 
 Decisions are produced by `PermissionManager` from a data-driven
 `PermissionPolicy` (per-level decision + an explicit **deny-list** of tool
@@ -27,10 +27,10 @@ tool is ever run.
   the step is **denied** — never silently allowed.
 - The deny-list overrides any level policy.
 - There is **no shell, command-execution, or arbitrary-code tool**. Phase 6
-  exposes only named, bounded computer interactions at MEDIUM permission;
-  any separately approved destructive or externally consequential action
-  would require HIGH permission and explicit approval. No generic action
-  tool or permission bypass is allowed.
+  exposes only named, bounded computer interactions; Phase 9 exposes only
+  fixed browser operations. Routine browser navigation/interaction is MEDIUM;
+  externally consequential browser controls are HIGH and require explicit
+  approval. No generic action tool or permission bypass is allowed.
 
 ### Approval flow
 
@@ -46,7 +46,8 @@ later) are modeled in the state machine but **NOT IMPLEMENTED** yet.
 - **Environment-based config only.** Non-secret tunables flow through
   `agent_core.config.Settings`, which reads plain environment variables
   (`AGENT_NAME`, `LOG_LEVEL`, `DATA_ROOT`, `MODEL_PROVIDER`, `MODEL_NAME`,
-  `MODEL_TIMEOUT_S`, `MODEL_MAX_RETRIES`).
+  `MODEL_TIMEOUT_S`, `MODEL_MAX_RETRIES`, and non-secret `BROWSER_*` resource
+  limits, alongside workspace/document/memory/computer/vision/voice bounds).
 - **`Settings` is secret-free by design.** Provider *credentials*
   (`OPENAI_API_KEY`) are read from the environment by the provider factory
   at construction time, passed straight to the vendor SDK, and never stored
@@ -102,15 +103,14 @@ confined to the configured workspace root (`WORKSPACE_ROOT`, default
 written, or deleted through any tool. Document tools read only through that
 same boundary, and documents are untrusted *data* — their content is never
 executed or treated as instructions (see the Phase 4 subsection below).
-Phase 6 computer tools and Phase 7 visual tools are not registered by
-default: the application must explicitly inject a `ComputerProvider` into
-`Agent.create_configured`. The local provider path exposes only the declared
-observation, interaction, and pixel-level visual tools described below; it
-adds no network egress or cloud upload path. The Phase 8 `VoiceRuntime` is
-constructed only with explicit in-process providers; none is auto-created,
-and its built-in mocks do not use audio hardware, network access, or keys.
-Voice transport hands text into the same `Agent.run` path and never grants
-voice-specific permissions.
+Phase 6 computer/Phase 7 vision tools and Phase 9 browser tools are not
+registered by default: the application must explicitly inject a provider into
+`Agent.create_configured` (or `Agent.create_demo`). Computer/vision providers
+add no network egress or cloud upload path; an explicit Playwright browser
+provider can access HTTP(S) sites and therefore adds real network egress.
+Phase 8 `VoiceRuntime` providers are also explicit in-process dependencies;
+the built-in voice mocks use no hardware, network access, or keys. Voice
+transcripts and browser page content never grant permissions by themselves.
 
 ### Tool runtime security (Phase 2)
 
@@ -128,12 +128,14 @@ voice-specific permissions.
 - **Tool faults cannot crash the agent.** Exceptions are contained into a
   structured `ToolResult` with a machine-readable `error_code`.
 - **Built-in tools are safe by construction.** No shell, subprocess,
-  `eval`/`exec`, dynamic imports, sockets, or HTTP clients anywhere in the
-  core source (verified by `tests/test_security_boundaries.py`). The
-  calculator uses a hand-written parser over an explicit operator allow-list
-  (no exponentiation, no identifiers); all built-in inputs are length-bounded.
-  The Phase 2 built-ins do not touch the filesystem at all; the only
-  filesystem access in the core is the Phase 3 workspace layer (below).
+  `eval`/`exec`, sockets, or general HTTP clients are introduced by tools
+  (verified by `tests/test_security_boundaries.py`). The only dynamic import
+  in the browser boundary is a fixed literal `playwright.sync_api` import at
+  explicit provider launch; model input cannot select a module. The calculator
+  uses a hand-written parser over an explicit operator allow-list (no
+  exponentiation, no identifiers); all built-in inputs are length-bounded.
+  Phase 2 built-ins do not touch the filesystem; workspace access stays in the
+  Phase 3 boundary below.
 - **Built-in tool inventory (all LOW permission):**
 
   | Tool | Purpose | Deterministic | Bounds |
@@ -145,10 +147,10 @@ voice-specific permissions.
 
 - **Explicitly NOT present** (forbidden, and test-verified absent):
   subprocess/PowerShell/cmd.exe, arbitrary Python execution, arbitrary
-  (unscoped) filesystem modification, arbitrary network requests, browser
-  automation, unrestricted GUI or OS control, shell/command execution, email,
-  purchases, account/security changes. Phase 6 adds only the explicit,
-  bounded Windows interactions in the computer-agent section below.
+  (unscoped) filesystem modification, generic arbitrary network requests,
+  unrestricted autonomous browser/GUI/OS control, shell/command execution,
+  email, purchases, account/security changes. Phases 6 and 9 add only the
+  explicit bounded computer/browser operations described below.
 
 ### Workspace filesystem security (Phase 3)
 
@@ -215,9 +217,11 @@ Their security model:
 set, the agent makes HTTPS calls to the configured provider endpoint.
 Security properties of this path:
 
-- The **only** network egress is the provider's Chat Completions API
-  (or an explicitly configured `OPENAI_BASE_URL`). No shell, no filesystem
-  access, no other egress exists in the codebase.
+- When only the model provider is enabled, network egress is limited to its
+  Chat Completions API (or explicitly configured `OPENAI_BASE_URL`). Phase 9
+  adds an opt-in Playwright provider that can navigate to HTTP(S) pages; it is
+  disabled by default and must be treated as a real network-egress capability.
+  There is still no shell or generic HTTP-client tool.
 - **Model output is untrusted data.** It is parsed as strict JSON (one
   markdown fence tolerated), validated against the plan schema, and checked
   against the registered tool allow-list. An invalid or hostile model
@@ -225,11 +229,12 @@ Security properties of this path:
   is not registered, and tool inputs are schema-validated by the registry
   before execution.
 - **Prompt injection cannot escalate privileges.** Even if a model (or data
-  it processed) tries to plan a dangerous action, only registered tools
-  exist and every tool is permission-gated (fail-safe). The only
-  HIGH-permission tool is `delete_file` (single file, inside the workspace,
-  explicit approval required); the MEDIUM workspace tools stay inside the
-  boundary by construction. There is no shell and no browser.
+  it processed) tries to plan a dangerous action, only registered tools exist
+  and every operation is permission-gated (fail-safe). `delete_file` is HIGH;
+  browser controls can also be HIGH at the runtime boundary for submission or
+  external consequences and require approval. Workspace tools stay inside
+  their path boundary. There is no shell or generic browser action tool; see
+  the Phase 9 trust boundary below.
 - **Provider errors are sanitized.** Error messages carry status codes and
   bounded detail only; credentials never appear in them, in logs, or in
   events.
@@ -296,7 +301,8 @@ model:
 - Side-effecting tools beyond the workspace boundary (web fetch/search)
   need per-tool scoping and MEDIUM/HIGH permission levels; any process or
   shell execution would be HIGH and require an explicit policy.
-- Browser automation remains NOT IMPLEMENTED (Phase 9). Semantic vision
+- Browser automation is limited to Phase 9's named, bounded foundation;
+  unrestricted autonomous browsing remains out of scope. Semantic vision
   models, OCR, and remote vision APIs/cloud upload are out of scope. Real
   microphone capture and external/cloud STT/TTS are also NOT IMPLEMENTED;
   Phase 8 provides only provider-neutral in-process contracts and offline
@@ -460,7 +466,8 @@ computer automation. Its security boundary is:
   raises `unsupported_platform`; missing Windows extras raise
   `provider_unavailable`. Windows hardware behavior has not been manually
   verified in this phase.
-- **Explicitly out of scope:** browser/Playwright, semantic vision models/OCR, remote vision APIs/cloud upload, voice,
+- **Explicitly out of scope:** unrestricted browser automation, CAPTCHA/anti-bot
+  bypass, semantic vision models/OCR, remote vision APIs/cloud upload, voice,
   unrestricted autonomy, remote desktop/network control, shell/PowerShell/
   subprocess, credential extraction/keylogging, persistence/stealth, security
   or UAC bypasses, arbitrary filesystem/clipboard access, process/DLL
@@ -561,6 +568,97 @@ approval.
   local to the caller. There is no persistent microphone recording, hidden
   global provider, task replay, or audio cache.
 
+### Browser Agent Foundation security (Phase 9)
+
+The browser package is a limited provider boundary, not an unrestricted
+browsing agent. Applications must explicitly supply `BrowserProvider` to
+`Agent.create_demo` or `Agent.create_configured`; no browser tools or Playwright
+instance are created by default. A deterministic `MockBrowserProvider` keeps
+CI offline. The optional `browser-playwright` extra imports Playwright lazily
+only when `launch()` is explicitly called. Installing the Python extra does
+not download Chromium or enable browser use by itself.
+
+- **Fixed operations and explicit scope.** Only the declared
+  `BROWSER_TOOL_NAMES` are registered: session/page lifecycle, bounded safe
+  metadata/observation, element lookup/wait, HTTP(S) navigation/history, and
+  explicit click/fill/select/allowlisted-key actions. Every page operation
+  receives both a `session_id` and `page_id`; there is no ambient active-tab
+  selection. Element actions require a fresh bounded observation and a
+  current element reference. The tool set has no generic action dispatcher,
+  arbitrary selector program, user-supplied JavaScript, Python, shell/process,
+  filesystem, socket, cookie, storage-state, or profile API.
+- **URL and network boundary.** The validator rejects filesystem paths,
+  unsupported schemes (including `file:`, `javascript:`, and `data:`), malformed
+  HTTP(S) URLs, userinfo, control characters, invalid hosts/ports, and URLs
+  exceeding `BROWSER_MAX_URL_CHARS`. Public URL projections drop query and
+  fragment values; navigation checks the exact current URL transiently without
+  retaining or emitting those values. The Playwright route guard permits only HTTP(S) requests;
+  downloads are disabled and popup pages are closed. **There is no host/domain
+  allowlist and no DNS-rebinding/SSRF defense.** A Playwright provider can
+  make requests to a user-supplied site and potentially to local/private
+  networks. Deployments that need isolation must enforce egress controls
+  outside this package; URL syntax validation alone is not a network sandbox.
+- **Ephemeral contexts, no account/profile reuse.** Playwright creates fresh
+  non-persistent browser contexts, blocks service workers, disables downloads,
+  closes popups, and never loads or saves a browser profile. No cookie or
+  storage contents are extracted. A site may still set its own transient
+  cookies inside that isolated context while it is running; the package
+  offers no tool to read or export them. Sessions are in-memory and should be
+  closed by the application when finished.
+- **Page content is untrusted data.** Titles, text, accessibility names,
+  attributes, forms, and embedded page content are untrusted observations,
+  explicitly marked as such and never treated as policy or approval input.
+  They do not create tools, select active pages, change permissions, or cause
+  the runtime to execute follow-up actions. No HTML is returned. Visible text,
+  element counts, fields, and attributes are bounded; page-derived content is
+  omitted from browser events. The current Agent plan remains the authority;
+  page text is only tool output.
+- **Sensitive form data.** The provider does not read input values during
+  observation and the allowlisted attribute set excludes the live `value`.
+  Password, token, payment, contact, and other sensitive controls are
+  identified using field metadata and labels, redacted in observations, and
+  cannot be filled or selected. Browser fill/select arguments and all browser
+  tool outputs are marked sensitive in Tool Runtime events; action receipts
+  retain only character counts, status, and bounded redacted before/after
+  observations. Text redaction also filters common credential/card patterns,
+  but it is heuristic and not a guarantee. Never use this phase on pages
+  containing secrets unless that risk is accepted by the deployment.
+- **Permissions and confirmation.** LOW covers observe/read/list/wait and
+  other bounded metadata; ordinary navigation, history, click, and
+  non-sensitive form interaction are MEDIUM. Form-submit controls, detected
+  purchase/send/delete/publish/security controls, and Enter are upgraded to
+  HIGH by `BrowserRuntime` and require explicit approval. The permission
+  manager's deny-list and fail-safe callback behavior remain authoritative;
+  no approval callback means deny. High-risk actions are never automatically
+  retried. Browser tools also pass through the normal Agent/Tool Runtime
+  permission and schema-validation path.
+- **Observe, act, verify, recover.** Actions require a bounded current
+  observation, then permission/confirmation, one named provider operation, a
+  fresh observation, and deterministic verification. `BrowserActionResult`
+  exposes `VERIFIED`, `FAILED`, or `UNCERTAIN`. Uncertain/failed action tools
+  return failure through Tool Runtime rather than being reported as successful
+  Agent steps. Only explicitly retryable idempotent navigation failures may
+  use the hard-capped retry budget; timeouts remain uncertain and do not
+  automatically retry. Clicks, form submissions, Enter, fill/select, and
+  other non-idempotent operations are never replayed.
+- **Screenshots and events.** Browser screenshot capture is opt-in and uses
+  the existing VisionRuntime validation boundary. Browser observations and
+  events return metadata only; raw PNG bytes are not persisted or placed in
+  normal browser events. The browser tools do not expose screenshots as an
+  output path. Tool Runtime events redact browser inputs/outputs; browser
+  lifecycle events include only IDs, operation/status, counts, stable error
+  codes, and safe screenshot-metadata presence—not page text, URLs with
+  query/fragment values, HTML, form values, or image bytes.
+- **Configuration and limitations.** `BROWSER_*` settings tighten but cannot
+  exceed hard caps for URLs, text, elements, attributes, fill length,
+  screenshots, sessions/pages, timeouts, and safe navigation retries. The
+  synchronous Playwright adapter uses library timeouts but cannot forcibly
+  interrupt a blocked launch/provider call. There is no CAPTCHA/anti-bot
+  bypass, credential harvesting, authenticated profile reuse, unrestricted
+  autonomous browsing, host allowlist, persistent audit log, or user-facing
+  approval interface. Deployments must use their own network controls and
+  approval UI/callback as appropriate.
+
 ---
 
 ## 5. Reporting
@@ -617,6 +715,14 @@ issue (do not post secrets or proof-of-concept exploit details publicly).
 | Voice audio/text/time/retry bounds, deterministic offline mocks, stable errors, and uncertainty fail-closed | IMPLEMENTED |
 | Voice events and serialization exclude raw audio; transcript content is omitted from voice-mode task/plan/tool lifecycle events | IMPLEMENTED |
 | Voice static dependency/storage boundary and audio-event security tests | IMPLEMENTED |
+| Browser provider/tools are opt-in; no default browser launch | IMPLEMENTED |
+| Fixed browser tool allowlist, explicit page IDs, HTTP(S) URL validation, and bounded page observations | IMPLEMENTED |
+| Browser LOW/MEDIUM/HIGH runtime permissions; HIGH confirmation for consequential actions | IMPLEMENTED |
+| Browser page/form data untrusted; sensitive controls blocked; browser Tool Runtime I/O redacted from events | IMPLEMENTED |
+| Browser observe/action/verify lifecycle; uncertainty never becomes tool/Agent success; safe retries are bounded | IMPLEMENTED |
+| Playwright is a lazy optional extra; core/CI needs neither Playwright nor browser binaries | IMPLEMENTED |
+| Browser security limitation: no host allowlist or SSRF/DNS-rebinding defense; deployment egress policy required | DOCUMENTED LIMITATION |
+| No arbitrary JavaScript, cookies/storage/profile extraction, CAPTCHA bypass, or unrestricted autonomous browsing | IMPLEMENTED (excluded) |
 | No microphone capture, Windows audio hardware, or external/cloud STT/TTS adapters | NOT IMPLEMENTED (future phase) |
 | No shell, remote control, clipboard, arbitrary filesystem, injection, stealth, or surveillance capability | IMPLEMENTED |
 | Windows hardware behavior | NOT VERIFIED (no manual desktop test) |
@@ -630,5 +736,6 @@ issue (do not post secrets or proof-of-concept exploit details publicly).
 | Synchronous human approval channel | PLANNED (wire-up in Phase 2) |
 | Persistent, redaction-aware audit log | PLANNED (Phase 12) |
 | Broader, separately reviewed computer workflows | NOT IMPLEMENTED (future; explicit named operations only) |
-| Browser automation | NOT IMPLEMENTED (Phase 9) |
+| Bounded Phase 9 browser foundation (fixed tools, opt-in provider, bounded permissions/verification) | IMPLEMENTED |
+| Unrestricted browser autonomy, host allowlist, and SSRF/DNS-rebinding defense | NOT IMPLEMENTED (documented limitation) |
 | UI/API authentication | NOT IMPLEMENTED (Phase 12) |

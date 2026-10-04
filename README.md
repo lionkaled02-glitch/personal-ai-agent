@@ -47,8 +47,9 @@ This repository currently contains:
   structured results; non-idempotent actions are not automatically retried.
   UI/window content is untrusted, sensitive input/output is redacted from
   events, screenshots are bounded and ephemeral. This is not unrestricted
-  autonomous control; browser, shell, arbitrary action, remote control, and
-  destructive capabilities are not included.
+  autonomous control; shell, arbitrary action, remote control, and destructive
+  capabilities are not included. Browser support is added separately in the
+  Phase 9 bounded foundation.
 - **Phase 7: Vision & Visual Verification** — provider-neutral Pydantic
   models and a deterministic offline provider reuse Phase 6 screenshots for
   metadata-only observation and bounded local RGB comparison. Optional Pillow
@@ -70,15 +71,23 @@ This repository currently contains:
   mocks require no keys/network; voice events contain metadata only and audio
   payloads are ephemeral and excluded from serialization. No microphone
   capture, external STT/TTS provider, or cloud audio upload is implemented.
+- **Phase 9: Browser Agent Foundation** — explicit browser sessions/pages and
+  fixed, bounded observation/navigation/interaction tools through the shared
+  Tool Runtime and permission/confirmation flow. Page data is untrusted,
+  sensitive fields are redacted/blocked, and action results use
+  `VERIFIED`/`FAILED`/`UNCERTAIN`. Deterministic mocks keep CI offline;
+  Playwright is optional and never downloads browser binaries during core
+  installation. This is not unrestricted autonomous browsing.
 
-Everything else (tools beyond the workspace boundary, web access, browser
-automation, real microphone capture, external/cloud STT/TTS, media,
+Everything else (tools beyond the workspace boundary, generic web fetch/search,
+unrestricted browser automation, real microphone capture, external/cloud STT/TTS, media,
 document/presentation generation, durable memory, vector/semantic retrieval,
 semantic vision/OCR/remote vision APIs, and a user interface) is deliberately
-NOT IMPLEMENTED yet. Browser automation remains a later phase; Phase 7 still
-provides only local pixel-level observation and verification, and broader
-computer automation beyond the explicit Phase 6 primitives remains
-unimplemented.
+NOT IMPLEMENTED yet. Phase 9 provides only the bounded browser foundation
+above—not unrestricted autonomous browsing, arbitrary scripts, or a general
+web fetch/search surface. Phase 7 still provides only local pixel-level
+observation and verification, and broader computer automation beyond the
+explicit Phase 6 primitives remains unimplemented.
 
 > See [ROADMAP.md](ROADMAP.md) and [ARCHITECTURE.md](ARCHITECTURE.md) for
 > exactly what exists and what does not.
@@ -213,6 +222,16 @@ A single Python package, `agent-core`, that proves the architecture works:
   repr, normal serialization, and events. No microphone capture, cloud upload,
   or real STT/TTS provider is included. `voice_normalize` is an optional
   LOW-permission text-only tool.
+- **Browser Agent Foundation (Phase 9)** — `BrowserProvider`, strict bounded
+  models/limits, `BrowserRuntime`, URL validation, redaction, verification and
+  bounded recovery, deterministic `MockBrowserProvider`, and an optional lazy
+  `PlaywrightBrowserProvider`. Nineteen fixed tools use explicit session and
+  page IDs through Tool Runtime; observations are LOW, ordinary navigation and
+  interaction are generally MEDIUM, and externally consequential controls
+  require HIGH confirmation. Page text is untrusted data, sensitive form
+  controls cannot be filled, screenshots are never returned by browser tools,
+  and uncertain actions fail closed. No arbitrary JavaScript, cookies,
+  storage, browser profiles, shell, or unrestricted autonomous browsing.
 - **One mock tool** (`demo_tool`) used for the end-to-end tests.
 
 The **first end-to-end flow** is implemented and tested:
@@ -258,6 +277,7 @@ User Request → Agent → Planner → Tool Registry → Mock Tool → Result �
 │       │   ├── computer_tools/  # explicit observation/action tools (Phases 6–7)
 │       │   ├── vision/          # ephemeral observation + pixel verification (Phase 7)
 │       │   ├── voice/           # bounded provider-neutral STT/TTS foundation (Phase 8)
+│       │   ├── browser/         # fixed safe browser operations + optional Playwright (Phase 9)
 │       │   ├── tool_runtime.py  # ToolRuntime (permission-gated execution)
 │       │   ├── errors.py        # exception hierarchy
 │       │   └── providers/
@@ -295,8 +315,12 @@ pip install -e packages/agent-core
 pip install pytest ruff mypy
 # Optional, Windows-only: pip install -e "packages/agent-core[computer-windows]"
 # Optional local RGB comparison: pip install -e "packages/agent-core[vision-image]"
+# Optional browser provider (Python package only; does not download Chromium):
+# pip install -e "packages/agent-core[browser-playwright]"
+# Only for an explicitly used local Playwright provider, install its browser:
+# playwright install chromium
 
-# 3. Run the test suite (offline, deterministic — no API keys needed)
+# 3. Run the test suite (offline, deterministic — no API keys/browser needed)
 pytest
 
 # 4. Run the end-to-end demo (mock provider by default, no API keys)
@@ -320,6 +344,18 @@ Configuration is environment-based (see `.env.example`): provider selection
 (`MODEL_PROVIDER`), model name (`MODEL_NAME`), timeout (`MODEL_TIMEOUT_S`),
 and retry count (`MODEL_MAX_RETRIES`). Copy `.env.example` to `.env` to
 override defaults. **The default (`mock`) needs no API key and no network.**
+
+### Using browser tools (opt-in)
+
+Browser tools are not registered unless an application passes an explicit
+`BrowserProvider` to `Agent.create_demo(...)` or `Agent.create_configured(...)`.
+Use `MockBrowserProvider` for deterministic offline work. The optional
+`browser-playwright` extra supplies the provider code only; Chromium must be
+installed separately if you choose to run it. A configured approval callback
+is required for MEDIUM/HIGH browser operations (no callback means approval is
+denied). Every action names its session and page, and page content is
+untrusted. This foundation does not provide unrestricted autonomous browsing,
+CAPTCHA/anti-bot bypass, authenticated-profile reuse, or arbitrary scripts.
 
 ---
 
@@ -353,12 +389,13 @@ A second real provider adapter (Anthropic, local models), streaming,
 semantic/vector retrieval (the Phase 4 document and Phase 5 memory
 retrieval are lexical by design and swappable via the `RetrievalIndex` and
 `MemoryRetriever` protocols), durable (persisted) memory beyond the
-process lifetime, tools that leave the workspace boundary (web fetch/search,
-shell/command execution), browser automation (Phase 9), real microphone
-capture, external/cloud STT/TTS providers, semantic vision/OCR/remote vision
-APIs, image/video generation, presentation/document generation, and a user
-interface are all **future phases**. Phase 8 includes only provider-neutral
-voice transport and local deterministic mocks. Phase 7 includes only local
-pixel comparison over Phase 6 screenshots; computer tools remain bounded,
-explicit primitives and do not enable unrestricted autonomy.
+process lifetime, generic web fetch/search, shell/command execution,
+unrestricted browser autonomy (Phase 9 supplies only explicit bounded
+operations), real microphone capture, external/cloud STT/TTS providers,
+semantic vision/OCR/remote vision APIs, image/video generation,
+presentation/document generation, and a user interface are all **future
+phases**. Phase 8 includes only provider-neutral voice transport and local
+deterministic mocks. Phase 7 includes only local pixel comparison over Phase
+6 screenshots; computer and browser tools remain bounded, explicit primitives
+and do not enable unrestricted autonomy.
 Adding new capabilities is explicitly gated in [ROADMAP.md](ROADMAP.md).

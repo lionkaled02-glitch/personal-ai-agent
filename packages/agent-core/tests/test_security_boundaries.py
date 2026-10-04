@@ -40,8 +40,15 @@ from agent_core import (
     ToolRuntime,
     register_default_tools,
 )
+from agent_core.browser import (
+    BROWSER_TOOL_NAMES,
+    BrowserRuntime,
+    MockBrowserProvider,
+    PlaywrightBrowserProvider,
+    register_browser_tools,
+)
 from agent_core.errors import PermissionDeniedError
-from agent_core.permissions import PermissionLevel
+from agent_core.permissions import PermissionLevel, PermissionManager
 from agent_core.tools import ToolSpec
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "agent_core"
@@ -211,6 +218,69 @@ class TestStaticSourceBoundaries:
                         if optional_windows.intersection(names):
                             offenders.append(f"{path.name}: eager optional import {names}")
         assert offenders == [], f"unsafe computer dependency boundary: {offenders}"
+
+    def test_browser_provider_imports_playwright_only_on_explicit_launch(self) -> None:
+        import sys
+
+        provider_source = SRC / "browser" / "playwright_provider.py"
+        tree = ast.parse(provider_source.read_text(encoding="utf-8"))
+        imports = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "import_module"
+        ]
+        assert len(imports) == 1
+        assert len(imports[0].args) == 1
+        assert isinstance(imports[0].args[0], ast.Constant)
+        assert imports[0].args[0].value == "playwright.sync_api"
+        assert "playwright" not in sys.modules
+        provider = PlaywrightBrowserProvider()
+        assert provider._browser is None
+
+    def test_browser_javascript_is_fixed_and_not_a_tool_input(self) -> None:
+        offenders: list[str] = []
+        for path in sorted((SRC / "browser").rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                    continue
+                if node.func.attr not in {"evaluate", "wait_for_function"}:
+                    continue
+                if not node.args:
+                    offenders.append(f"{path.name}: missing fixed script")
+                    continue
+                script = node.args[0]
+                if isinstance(script, ast.Constant) and isinstance(script.value, str):
+                    continue
+                if isinstance(script, ast.Name) and script.id.startswith("_"):
+                    continue
+                offenders.append(f"{path.name}: dynamic JavaScript argument")
+        assert offenders == []
+
+    def test_browser_surface_has_only_fixed_named_operations(self) -> None:
+        registry = ToolRegistry()
+        runtime = BrowserRuntime(MockBrowserProvider(), PermissionManager())
+        registered = register_browser_tools(registry, runtime)
+        assert tuple(registered) == BROWSER_TOOL_NAMES
+        assert "browser_execute_action" not in registry.names()
+        assert not hasattr(BrowserRuntime, "execute_action")
+        assert not hasattr(BrowserRuntime, "execute_javascript")
+        assert not hasattr(PlaywrightBrowserProvider, "execute_javascript")
+        forbidden_provider_members = {
+            "cookies",
+            "add_cookies",
+            "storage_state",
+            "local_storage",
+            "session_storage",
+            "open_profile",
+            "save_profile",
+            "run_command",
+            "evaluate",
+            "execute",
+        }
+        assert forbidden_provider_members.isdisjoint(dir(PlaywrightBrowserProvider))
 
 
 class TestCalculatorInjections:

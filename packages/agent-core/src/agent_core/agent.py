@@ -16,6 +16,7 @@ import uuid
 from pathlib import Path
 from typing import Literal
 
+from .browser import BrowserLimits, BrowserProvider, BrowserRuntime, register_browser_tools
 from .builtin_tools import register_default_tools
 from .computer import ComputerLimits, ComputerProvider, ComputerRuntime
 from .computer_tools import register_computer_tools
@@ -96,6 +97,7 @@ class Agent:
         approval: ApprovalCallback | None = None,
         clock: Clock | None = None,
         workspace_root: Path | None = None,
+        browser_provider: BrowserProvider | None = None,
     ) -> Agent:
         """A fully wired agent using only in-process fakes.
 
@@ -107,7 +109,9 @@ class Agent:
         boundary and an in-memory knowledge store, and the Phase 5 memory
         tools bound to an in-memory memory store. Filesystem and document
         tools only act inside the workspace boundary; memory is explicit
-        (permission-gated creation, never automatic).
+        (permission-gated creation, never automatic). Phase 9 browser tools are
+        registered only when an explicit provider is supplied and share the
+        same permissions, events, and local vision boundary.
         """
         registry = ToolRegistry()
         register_default_tools(registry)
@@ -119,11 +123,24 @@ class Agent:
         memory = InMemoryMemoryStore(MemoryLimits(), clock=clock)
         register_memory_tools(registry, memory, clock=clock)
         provider = MockModelProvider()
+        permissions = PermissionManager(approval=approval)
+        events = EventBus(clock=clock)
+        if browser_provider is not None:
+            browser_vision = VisionRuntime(events=events, clock=clock)
+            browser_runtime = BrowserRuntime(
+                provider=browser_provider,
+                permissions=permissions,
+                events=events,
+                limits=BrowserLimits(),
+                vision=browser_vision,
+                clock=clock,
+            )
+            register_browser_tools(registry, browser_runtime)
         return cls(
             planner=ModelPlanner(provider),
             registry=registry,
-            permissions=PermissionManager(approval=approval),
-            events=EventBus(clock=clock),
+            permissions=permissions,
+            events=events,
             verifier=BasicVerifier(),
             clock=clock,
             knowledge_store=store,
@@ -138,13 +155,15 @@ class Agent:
         clock: Clock | None = None,
         gateway: ModelGateway | None = None,
         computer_provider: ComputerProvider | None = None,
+        browser_provider: BrowserProvider | None = None,
     ) -> Agent:
         """An agent wired from configuration (Phase 1).
 
         The model provider is selected via ``MODEL_PROVIDER`` and reached
         through the :class:`~agent_core.providers.gateway.ModelGateway`.
-        With default settings (``MODEL_PROVIDER=mock``) the agent is fully
-        offline — the demo path — and requires no API keys.
+        With default settings (``MODEL_PROVIDER=mock``) and no optional
+        network-backed provider, the agent is fully offline and requires no
+        API keys.
 
         Pass a pre-built ``gateway`` to reuse/inspect one (e.g. to log the
         active provider name); otherwise it is built from ``settings``.
@@ -153,9 +172,11 @@ class Agent:
         the Phase 4 document tools bound to the same boundary and an
         in-memory knowledge store whose limits come from the settings, and
         the Phase 5 memory tools bound to an in-memory memory store whose
-        limits also come from the settings. Computer tools are registered
-        only when an explicit provider is passed; those tools use the same
-        permission manager and event bus, with limits from ``COMPUTER_*``.
+        limits also come from the settings. Computer and browser tools are
+        registered only when explicit providers are passed; they use the same
+        permission manager and event bus, with limits from ``COMPUTER_*`` and
+        ``BROWSER_*``. Browser network access is opt-in and requires deployment
+        egress controls if private/local sites must be isolated.
         """
         resolved = settings if settings is not None else Settings.from_env()
         if gateway is None:
@@ -170,12 +191,15 @@ class Agent:
         register_memory_tools(registry, memory, clock=clock)
         permissions = PermissionManager(approval=approval)
         events = EventBus(clock=clock)
-        if computer_provider is not None:
+        vision_runtime: VisionRuntime | None = None
+        if computer_provider is not None or browser_provider is not None:
             vision_runtime = VisionRuntime(
                 limits=VisionLimits.from_settings(resolved),
                 events=events,
                 clock=clock,
             )
+        if computer_provider is not None:
+            assert vision_runtime is not None
             computer_runtime = ComputerRuntime(
                 provider=computer_provider,
                 permissions=permissions,
@@ -186,6 +210,17 @@ class Agent:
             )
             register_computer_tools(registry, computer_runtime)
             register_vision_tools(registry, computer_runtime, vision_runtime)
+        if browser_provider is not None:
+            assert vision_runtime is not None
+            browser_runtime = BrowserRuntime(
+                provider=browser_provider,
+                permissions=permissions,
+                events=events,
+                limits=BrowserLimits.from_settings(resolved),
+                vision=vision_runtime,
+                clock=clock,
+            )
+            register_browser_tools(registry, browser_runtime)
         return cls(
             planner=ModelPlanner(gateway),
             registry=registry,

@@ -160,6 +160,22 @@ class Settings(BaseModel):
     voice_max_synthesis_time_s: float = 15.0
     voice_max_retries: int = 1
     voice_min_transcription_confidence: float = 0.6
+    # Browser Agent Foundation (Phase 9) — provider-neutral bounds only.
+    browser_max_url_chars: int = 2_048
+    browser_max_title_chars: int = 256
+    browser_max_text_chars: int = 4_000
+    browser_max_elements: int = 100
+    browser_max_element_text_chars: int = 256
+    browser_max_attributes: int = 12
+    browser_max_attribute_chars: int = 128
+    browser_max_fill_chars: int = 1_024
+    browser_max_screenshot_bytes: int = 1_048_576
+    browser_max_sessions: int = 5
+    browser_max_pages_per_session: int = 10
+    browser_max_navigation_time_s: float = 10.0
+    browser_max_action_time_s: float = 5.0
+    browser_max_wait_time_s: float = 5.0
+    browser_max_retries: int = 1
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Settings:
@@ -336,6 +352,53 @@ class Settings(BaseModel):
                     "VOICE_MIN_TRANSCRIPTION_CONFIDENCE",
                     defaults.voice_min_transcription_confidence,
                 )
+            ),
+            browser_max_url_chars=int(
+                source.get("BROWSER_MAX_URL_CHARS", defaults.browser_max_url_chars)
+            ),
+            browser_max_title_chars=int(
+                source.get("BROWSER_MAX_TITLE_CHARS", defaults.browser_max_title_chars)
+            ),
+            browser_max_text_chars=int(
+                source.get("BROWSER_MAX_TEXT_CHARS", defaults.browser_max_text_chars)
+            ),
+            browser_max_elements=int(
+                source.get("BROWSER_MAX_ELEMENTS", defaults.browser_max_elements)
+            ),
+            browser_max_element_text_chars=int(
+                source.get(
+                    "BROWSER_MAX_ELEMENT_TEXT_CHARS", defaults.browser_max_element_text_chars
+                )
+            ),
+            browser_max_attributes=int(
+                source.get("BROWSER_MAX_ATTRIBUTES", defaults.browser_max_attributes)
+            ),
+            browser_max_attribute_chars=int(
+                source.get("BROWSER_MAX_ATTRIBUTE_CHARS", defaults.browser_max_attribute_chars)
+            ),
+            browser_max_fill_chars=int(
+                source.get("BROWSER_MAX_FILL_CHARS", defaults.browser_max_fill_chars)
+            ),
+            browser_max_screenshot_bytes=int(
+                source.get("BROWSER_MAX_SCREENSHOT_BYTES", defaults.browser_max_screenshot_bytes)
+            ),
+            browser_max_sessions=int(
+                source.get("BROWSER_MAX_SESSIONS", defaults.browser_max_sessions)
+            ),
+            browser_max_pages_per_session=int(
+                source.get("BROWSER_MAX_PAGES_PER_SESSION", defaults.browser_max_pages_per_session)
+            ),
+            browser_max_navigation_time_s=float(
+                source.get("BROWSER_MAX_NAVIGATION_TIME_S", defaults.browser_max_navigation_time_s)
+            ),
+            browser_max_action_time_s=float(
+                source.get("BROWSER_MAX_ACTION_TIME_S", defaults.browser_max_action_time_s)
+            ),
+            browser_max_wait_time_s=float(
+                source.get("BROWSER_MAX_WAIT_TIME_S", defaults.browser_max_wait_time_s)
+            ),
+            browser_max_retries=int(
+                source.get("BROWSER_MAX_RETRIES", defaults.browser_max_retries)
             ),
         )
 

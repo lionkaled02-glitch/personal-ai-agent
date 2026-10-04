@@ -266,7 +266,7 @@ arbitrary-action interface.
 | Optional `computer-windows` extra: lazily loaded Windows UI Automation provider; import-safe elsewhere and explicit `unsupported_platform` behavior | IMPLEMENTED |
 | Agent integration is opt-in: tools are registered only when an explicit provider is passed to `Agent.create_configured(computer_provider=...)` | IMPLEMENTED |
 | Deterministic fake-provider tests cover tools, permission/approval, bounds, verification, redaction, retry/timeouts, settings, and unsupported platforms | IMPLEMENTED |
-| Browser/Playwright, semantic vision models/OCR, remote vision APIs/cloud upload, real microphone capture/external STT-TTS, remote desktop, shell/PowerShell, arbitrary code/actions, clipboard, and surveillance | NOT IMPLEMENTED (out of scope) |
+| Unrestricted autonomous browser use, CAPTCHA/anti-bot bypass, arbitrary browser actions, semantic vision/OCR, remote vision APIs/cloud upload, real microphone capture/external STT-TTS, remote desktop, shell/PowerShell, arbitrary code/actions, clipboard, and surveillance | NOT IMPLEMENTED (out of scope) |
 
 **Acceptance:** deterministic tests use an in-memory fake provider (no Windows
 desktop required); the shared permission manager is enforced even for direct
@@ -356,13 +356,55 @@ buffers are never persisted or uploaded.
 
 ---
 
-## Phase 9 — Browser automation
+## Phase 9 — Browser Agent Foundation ✅ IMPLEMENTED
+
+A deliberately bounded browser surface—not an unrestricted autonomous web
+agent. Browser tools are opt-in, provider-neutral, and use the existing Tool
+Runtime, permission manager, event bus, structured errors, and confirmation
+callback. Tests use an in-memory mock and do not require the internet,
+Playwright, browser binaries, or a GUI.
 
 | Item | Status |
 | --- | --- |
-| Browser provider (e.g. Playwright) behind a tool/agent boundary | NOT IMPLEMENTED |
-| HIGH-permission + approval for navigations/actions | NOT IMPLEMENTED |
-| DOM/page content as untrusted tool output | NOT IMPLEMENTED |
+| Required `browser/` package modules: models, limits, provider interface, runtime, serialization, verification, recovery, mock, and explicit tools | IMPLEMENTED |
+| Optional `PlaywrightBrowserProvider`, lazily imports the optional extra only at launch; no binary install in core/CI | IMPLEMENTED |
+| Strict bounded models; HTTP(S)-only URL validation; reject malformed URLs, userinfo, unsupported schemes, and filesystem paths | IMPLEMENTED |
+| Explicit isolated sessions/pages; every operation supplies IDs; no implicit active-tab selection or persistent profile | IMPLEMENTED |
+| Fixed observation, element lookup/wait, navigation/history, click, fill, select, and key operations; no generic action/script tool | IMPLEMENTED |
+| LOW read/observe/wait operations; ordinary navigation and interactions MEDIUM; externally consequential controls and Enter require HIGH confirmation | IMPLEMENTED |
+| Observe → permission/confirmation → action → fresh observe → verify → bounded safe recovery | IMPLEMENTED |
+| Explicit `VERIFIED` / `FAILED` / `UNCERTAIN`; uncertain/failed actions never become successful browser Tool Runtime steps | IMPLEMENTED |
+| Bounded page text/elements/attributes/timeouts/screenshots/retries; event payloads omit page contents, form values, raw HTML, and screenshot bytes | IMPLEMENTED |
+| Sensitive-form detection/redaction; filling/selecting sensitive controls is blocked; no automatic high-risk retries | IMPLEMENTED |
+| Offline tests: URL security, limits, permissions, confirmation, navigation/element/form behavior, redaction, prompt-injection data, verification/recovery, serialization, boundaries, Tool Runtime/Agent integration | IMPLEMENTED |
+| Root/package READMEs, architecture, security, roadmap, BROWSER_* configuration documentation, and `.env.example` | IMPLEMENTED |
+| Host/domain allowlist, DNS-rebinding/SSRF protection, authenticated profile reuse, CAPTCHA/anti-bot bypass, unrestricted autonomous browsing | NOT IMPLEMENTED (explicit limitation/out of scope) |
+
+**Acceptance:** deterministic mock tests prove that unsafe schemes/paths are
+rejected; page text remains marked untrusted and cannot authorize or trigger a
+privileged operation; sensitive values do not enter events; approval/denial
+uses the existing policy; high-risk operations are not replayed; action
+uncertainty is never success; all outputs/retries are bounded; browser tools
+run through the existing Tool Runtime and Agent orchestration. Ordinary
+installation and CI do not import Playwright or require browser binaries.
+
+**Known limitations:**
+- URL validation checks bounded HTTP(S) syntax, host syntax, and credentials;
+  it is not a domain allowlist or SSRF/DNS-rebinding defense. Deployments that
+  require private-network isolation must provide network-level egress rules.
+- Sensitive-content redaction is heuristic. Sensitive form controls are
+  blocked and values are not read, but visible page text/title content can
+  still contain secrets that heuristic redaction cannot recognize. Do not
+  browse pages containing secrets unless the deployment accepts that risk.
+- Playwright calls are synchronous; configured library timeouts are used, but
+  a blocked launch/provider call cannot be forcibly interrupted by the core.
+  The optional Python extra does not install Chromium; manual Playwright
+  hardware/browser smoke testing is not part of offline CI.
+- No user-facing approval UI is included. The existing callback must be wired
+  by the application, and absent/denied approval fails closed.
+- No CAPTCHA/anti-bot handling, credential collection, authenticated-profile
+  persistence, download handling, raw HTML access, arbitrary JavaScript,
+  shell/process/filesystem access, or unrestricted browsing is provided.
 
 ---
 
