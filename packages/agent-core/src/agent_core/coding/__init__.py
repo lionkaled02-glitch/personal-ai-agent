@@ -1,11 +1,12 @@
-"""Phase 10 coding foundation: bounded data contracts and read-only analysis.
+"""Phase 10 coding foundation: bounded data, read-only analysis, diagnostics.
 
-The local analysis runtime reads validated workspace files and returns bounded
-facts only. Edit proposals and test plans remain data; this package adds no
-file writes, code execution, command runner, or real model provider. Resolve
-all project/file paths through the existing ``Workspace``.
+The local runtime reads validated workspace files and returns bounded facts;
+the diagnostics engine consumes only those source snapshots. Edit proposals
+and test plans remain data. This package adds no file writes, code execution,
+command runner, or real model provider. Resolve paths through ``Workspace``.
 """
 
+from .diagnostics import CodeDiagnosticBatch, CodeDiagnosticsEngine
 from .errors import (
     CodingError,
     CodingLimitError,
@@ -28,6 +29,7 @@ from .models import (
     CodeAnalysisStatus,
     CodeChange,
     CodeDiagnostic,
+    CodeDiagnosticCategory,
     CodeEditRequest,
     CodeEditResult,
     CodeEditStatus,
@@ -64,6 +66,9 @@ __all__ = [
     "CodeAnalysisStatus",
     "CodeChange",
     "CodeDiagnostic",
+    "CodeDiagnosticBatch",
+    "CodeDiagnosticCategory",
+    "CodeDiagnosticsEngine",
     "CodeEditRequest",
     "CodeEditResult",
     "CodeEditStatus",

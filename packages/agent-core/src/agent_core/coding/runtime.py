@@ -20,6 +20,7 @@ from pathlib import Path
 
 from ..permissions import PermissionLevel
 from ..workspace import Workspace, WorkspaceError
+from .diagnostics import CodeDiagnosticsEngine
 from .errors import CodingLimitError, CodingWorkspaceError
 from .interfaces import CodingOperation
 from .limits import CodingLimits
@@ -31,6 +32,7 @@ from .models import (
     CodeAnalysisResult,
     CodeAnalysisStatus,
     CodeDiagnostic,
+    CodeDiagnosticCategory,
     CodeFile,
     CodeFileMetric,
     CodeLanguage,
@@ -287,13 +289,29 @@ class _AnalysisAccumulator:
         *,
         path: str | None = None,
         severity: DiagnosticSeverity = DiagnosticSeverity.WARNING,
-    ) -> None:
+        category: CodeDiagnosticCategory = CodeDiagnosticCategory.ANALYSIS,
+        region: CodeRegion | None = None,
+    ) -> bool:
         if len(self.diagnostics) >= self.limits.max_diagnostics:
             self.mark_limit(CodeAnalysisLimitReason.DIAGNOSTIC_LIMIT)
-            return
+            return False
+        if region is not None:
+            if self.region_count >= self.limits.max_regions:
+                self.mark_limit(CodeAnalysisLimitReason.REGION_LIMIT)
+                region = None
+            else:
+                self.region_count += 1
         self.diagnostics.append(
-            CodeDiagnostic(code=code, severity=severity, message=message, path=path)
+            CodeDiagnostic(
+                code=code,
+                category=category,
+                severity=severity,
+                message=message,
+                path=path,
+                region=region,
+            )
         )
+        return True
 
     def add_skipped(
         self,
@@ -361,6 +379,7 @@ class CodingAnalysisRuntime:
     def __init__(self, workspace: Workspace, limits: CodingLimits | None = None) -> None:
         self._workspace = workspace
         self._limits = limits or CodingLimits()
+        self._diagnostics_engine = CodeDiagnosticsEngine(self._limits)
 
     @property
     def limits(self) -> CodingLimits:
@@ -676,6 +695,26 @@ class CodingAnalysisRuntime:
             text,
             collector,
         )
+        remaining_diagnostics = max(
+            0,
+            self._limits.max_diagnostics - len(collector.diagnostics),
+        )
+        diagnostic_batch = self._diagnostics_engine.diagnose_file(
+            source,
+            language,
+            max_diagnostics=remaining_diagnostics,
+        )
+        for diagnostic in diagnostic_batch.diagnostics:
+            collector.add_diagnostic(
+                diagnostic.code,
+                diagnostic.message,
+                path=diagnostic.path,
+                severity=diagnostic.severity,
+                category=diagnostic.category,
+                region=diagnostic.region,
+            )
+        if diagnostic_batch.truncated:
+            collector.mark_limit(CodeAnalysisLimitReason.DIAGNOSTIC_LIMIT)
         collector.analyzed_files.append(
             AnalyzedCodeFile(
                 path=source.path,
@@ -727,11 +766,8 @@ class CodingAnalysisRuntime:
             try:
                 tree = ast.parse(text, filename=path, type_comments=True)
             except (SyntaxError, ValueError, RecursionError, MemoryError):
-                collector.add_diagnostic(
-                    "malformed_python",
-                    "Python syntax could not be parsed; source was not executed.",
-                    path=path,
-                )
+                # ``CodeDiagnosticsEngine`` reports syntax/structural findings
+                # from the same bounded snapshot after symbol extraction.
                 return CodeAnalysisMethod.PYTHON_AST, ()
             visitor = _PythonStructureVisitor(
                 lambda name, kind, start, end, qualified: collector.add_symbol(
@@ -751,6 +787,7 @@ class CodingAnalysisRuntime:
                     "python_ast_limit",
                     "Python AST analysis exceeded a safe structural bound.",
                     path=path,
+                    category=CodeDiagnosticCategory.LIMIT,
                 )
             return CodeAnalysisMethod.PYTHON_AST, ()
 

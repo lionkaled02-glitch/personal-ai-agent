@@ -20,6 +20,7 @@ from agent_core.coding import (
     CodeAnalysisMethod,
     CodeAnalysisResult,
     CodeAnalysisStatus,
+    CodeDiagnosticCategory,
     CodeLanguage,
     CodeSkipReason,
     CodeSymbolKind,
@@ -51,7 +52,8 @@ def _write(project_root: Path, relative_path: str, content: str | bytes) -> Path
     if isinstance(content, bytes):
         target.write_bytes(content)
     else:
-        target.write_text(content, encoding="utf-8")
+        # Preserve LF bytes so source-character expectations are platform-neutral.
+        target.write_text(content, encoding="utf-8", newline="")
     return target
 
 
@@ -67,6 +69,9 @@ class TestCodingAnalysisRuntime:
     def test_python_ast_is_read_only_and_reports_bounded_symbols(self, tmp_path: Path) -> None:
         workspace, project, project_root = _project_tree(tmp_path)
         marker = tmp_path / "must-not-be-created.txt"
+        marker_expression = " +\n    ".join(
+            repr(str(marker)[index : index + 40]) for index in range(0, len(str(marker)), 40)
+        )
         source = (
             "import pathlib\n"
             "CONSTANT = 4\n"
@@ -75,7 +80,9 @@ class TestCodingAnalysisRuntime:
             "class Calculator:\n"
             "    def add(self, left, right):\n"
             "        return left + right\n"
-            f"pathlib.Path({str(marker)!r}).write_text('executed')\n"
+            "pathlib.Path(\n"
+            f"    {marker_expression}\n"
+            ").write_text('executed')\n"
         )
         _write(project_root, "src/math_tools.py", source)
 
@@ -95,7 +102,7 @@ class TestCodingAnalysisRuntime:
         ]
         assert result.analyzed_files[0].method is CodeAnalysisMethod.PYTHON_AST
         assert result.analyzed_files[0].path == "project/src/math_tools.py"
-        assert result.analyzed_files[0].line_count == 8
+        assert result.analyzed_files[0].line_count == len(source.splitlines())
         assert result.observation.total_source_chars == len(source)
         assert runtime.name == "coding_analyze"
         assert runtime.permission_level is PermissionLevel.LOW
@@ -206,13 +213,13 @@ class TestCodingAnalysisRuntime:
     def test_invalid_utf8_and_nul_binary_are_skipped_without_exposure(self, tmp_path: Path) -> None:
         workspace, project, project_root = _project_tree(tmp_path)
         _write(project_root, "bad.py", b"\xff\xfe")
-        _write(project_root, "nul.txt", b"text\x00binary")
+        _write(project_root, "contains-nul.txt", b"text\x00binary")
 
         result = _analyze(workspace, project)
 
         reasons = {item.path: item.reason for item in result.skipped_files}
         assert reasons["project/bad.py"] is CodeSkipReason.DECODE_FAILED
-        assert reasons["project/nul.txt"] is CodeSkipReason.BINARY_FILE
+        assert reasons["project/contains-nul.txt"] is CodeSkipReason.BINARY_FILE
         assert result.observation.files == ()
 
     def test_excluded_directories_are_pruned_but_selected_root_is_not(self, tmp_path: Path) -> None:
@@ -428,6 +435,56 @@ class TestCodingAnalysisRuntime:
         assert CodeAnalysisLimitReason.ANALYSIS_TIME_LIMIT in time_limited.limit_reasons
         assert time_limited.elapsed_time_s == 1.0
 
+    def test_python_javascript_and_typescript_diagnostics_are_workspace_scoped(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        workspace, project, project_root = _project_tree(tmp_path)
+        _write(project_root, "src/broken.py", "def broken(:\n    pass\n")
+        _write(project_root, "src/broken.js", "const result = values[0;\n")
+        _write(project_root, "src/style.ts", "const value = 1  \n")
+
+        result = _analyze(workspace, project)
+
+        by_code = {(item.code, item.path): item for item in result.diagnostics}
+        expected = (
+            ("PY001", "project/src/broken.py"),
+            ("ECMA001", "project/src/broken.js"),
+            ("STYLE001", "project/src/style.ts"),
+        )
+        for key in expected:
+            diagnostic = by_code[key]
+            assert diagnostic.region is not None
+            assert diagnostic.region.path == key[1]
+            assert diagnostic.region.start_line == 1
+        assert result.status is CodeAnalysisStatus.PARTIAL
+        assert result.observation.files
+        result.validate_workspace(project, workspace)
+
+    def test_diagnostics_obey_shared_diagnostic_and_region_limits(self, tmp_path: Path) -> None:
+        workspace, project, project_root = _project_tree(tmp_path)
+        _write(project_root, "style.py", "first = 1  \nsecond = 2  \n")
+
+        diagnostic_limited = _analyze(
+            workspace,
+            project,
+            CodingLimits(max_diagnostics=1),
+        )
+        assert len(diagnostic_limited.diagnostics) == 1
+        assert CodeAnalysisLimitReason.DIAGNOSTIC_LIMIT in diagnostic_limited.limit_reasons
+        assert diagnostic_limited.truncated is True
+
+        region_limited = _analyze(
+            workspace,
+            project,
+            CodingLimits(max_regions=0),
+        )
+        assert len(region_limited.diagnostics) == 2
+        assert all(item.region is None for item in region_limited.diagnostics)
+        assert CodeAnalysisLimitReason.REGION_LIMIT in region_limited.limit_reasons
+        assert region_limited.truncated is True
+        region_limited.validate_workspace(project, workspace)
+
     def test_malformed_python_is_reported_without_execution(self, tmp_path: Path) -> None:
         workspace, project, project_root = _project_tree(tmp_path)
         _write(project_root, "broken.py", "def broken(:\n    pass\n")
@@ -437,5 +494,11 @@ class TestCodingAnalysisRuntime:
         assert result.analyzed_files[0].method is CodeAnalysisMethod.PYTHON_AST
         assert result.symbols == ()
         assert result.status is CodeAnalysisStatus.PARTIAL
-        assert result.diagnostics[0].code == "malformed_python"
-        assert result.diagnostics[0].path == "project/broken.py"
+        diagnostic = result.diagnostics[0]
+        assert diagnostic.code == "PY001"
+        assert diagnostic.category is CodeDiagnosticCategory.SYNTAX
+        assert diagnostic.severity.value == "error"
+        assert diagnostic.path == "project/broken.py"
+        assert diagnostic.region is not None
+        assert diagnostic.region.start_line == 1
+        result.validate_workspace(project, workspace)

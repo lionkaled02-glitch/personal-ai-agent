@@ -78,15 +78,16 @@ This repository currently contains:
   `VERIFIED`/`FAILED`/`UNCERTAIN`. Deterministic mocks keep CI offline;
   Playwright is optional and never downloads browser binaries during core
   installation. This is not unrestricted autonomous browsing.
-- **Phase 10: Coding Agent core foundation (Steps 1–2)** — bounded
+- **Phase 10: Coding Agent core foundation (Steps 1–3)** — bounded
   provider-neutral project, source, analysis, structural patch, and test-plan
   models; workspace-backed path validation; `CODING_*` limits; an offline
-  deterministic mock; and a read-only local analyzer. Python is parsed to an
-  AST without execution, JavaScript/TypeScript receive a shallow line scan,
-  and configuration/document formats yield metadata only. Source and
-  repository text remain untrusted data. There is no source write/apply
-  operation, shell/command use, compiler, package installation, test/build
-  execution, or real model integration.
+  deterministic mock; a read-only local analyzer; and deterministic Python,
+  JavaScript, and TypeScript diagnostics. Python syntax uses AST parsing without
+  execution; JavaScript/TypeScript checks are shallow and rule-based; supported
+  configuration/document formats yield metadata only. Source and repository
+  text remain untrusted data. There is no source write/apply operation,
+  shell/command use, compiler, package installation, test/build execution, or
+  real model integration.
 
 Everything else (tools beyond the workspace boundary, generic web fetch/search,
 unrestricted browser automation, real microphone capture, external/cloud STT/TTS, media,

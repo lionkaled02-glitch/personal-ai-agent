@@ -19,6 +19,7 @@ from agent_core.coding import (
     CodeAnalysisStatus,
     CodeChange,
     CodeDiagnostic,
+    CodeDiagnosticCategory,
     CodeEditRequest,
     CodeEditResult,
     CodeEditStatus,
@@ -206,6 +207,7 @@ class TestCodingModels:
         )
         diagnostic = CodeDiagnostic(
             code="STYLE001",
+            category=CodeDiagnosticCategory.STYLE,
             severity=DiagnosticSeverity.INFO,
             message="Example provider diagnostic.",
             region=region,
@@ -216,6 +218,16 @@ class TestCodingModels:
         assert source.content not in serialized
         assert source.source_sha256 in serialized
         assert symbol.region.path == diagnostic.region.path  # type: ignore[union-attr]
+        assert diagnostic.category is CodeDiagnosticCategory.STYLE
+        with pytest.raises(ValidationError):
+            CodeDiagnostic(
+                code="STYLE001",
+                category=CodeDiagnosticCategory.STYLE,
+                severity=DiagnosticSeverity.WARNING,
+                message="Mismatched diagnostic path.",
+                path="project/other.py",
+                region=region,
+            )
         assert PatchValidationMetadata().status is PatchValidationStatus.PENDING
         assert PatchValidationCheck(name="source_hash", status=PatchCheckStatus.NOT_RUN)
         with pytest.raises(ValidationError):

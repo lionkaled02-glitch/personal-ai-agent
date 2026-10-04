@@ -204,17 +204,27 @@ class CodeSymbol(CodingModel):
 
 
 class DiagnosticSeverity(StrEnum):
-    """Severity labels for provider-produced analysis diagnostics."""
+    """Severity labels for deterministic or provider-produced diagnostics."""
 
     INFO = "info"
     WARNING = "warning"
     ERROR = "error"
 
 
+class CodeDiagnosticCategory(StrEnum):
+    """Provider-neutral category labels for deterministic diagnostic rules."""
+
+    ANALYSIS = "analysis"
+    SYNTAX = "syntax"
+    STYLE = "style"
+    LIMIT = "limit"
+
+
 class CodeDiagnostic(CodingModel):
     """A bounded diagnostic; its message remains untrusted output."""
 
     code: str = Field(min_length=1, max_length=64, pattern=_IDENTIFIER_PATTERN, strict=True)
+    category: CodeDiagnosticCategory = CodeDiagnosticCategory.ANALYSIS
     severity: DiagnosticSeverity
     message: str = Field(min_length=1, max_length=4_096, strict=True, repr=False)
     path: str | None = Field(default=None, max_length=MAX_CODING_PATH_CHARS, strict=True)

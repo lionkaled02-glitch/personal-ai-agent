@@ -112,10 +112,10 @@ provider can access HTTP(S) sites and therefore adds real network egress.
 Phase 8 `VoiceRuntime` providers are also explicit in-process dependencies;
 the built-in voice mocks use no hardware, network access, or keys. Voice
 transcripts and browser page content never grant permissions by themselves.
-Phase 10 Steps 1–2 add coding contracts, an offline mock, and a local
-read-only analysis runtime. It is not wired into `Agent`; it exposes the
-existing LOW `coding_analyze` permission descriptor and has no write or
-execution path.
+Phase 10 Steps 1–3 add coding contracts, an offline mock, a local read-only
+analysis runtime, and deterministic diagnostics over validated source
+snapshots. They are not wired into `Agent`; analysis exposes the existing LOW
+`coding_analyze` permission descriptor and has no write or execution path.
 
 ### Tool runtime security (Phase 2)
 
@@ -664,13 +664,14 @@ not download Chromium or enable browser use by itself.
   approval interface. Deployments must use their own network controls and
   approval UI/callback as appropriate.
 
-### Coding foundation security (Phase 10, Steps 1–2)
+### Coding foundation security (Phase 10, Steps 1–3)
 
-The coding package provides bounded data contracts, an offline mock, and a
-local read-only analysis runtime; it is not a general-purpose code runner.
-Source, comments, README/config text, and repository paths are untrusted data
-and never change policy or permissions. The runtime makes no provider or
-network calls and is not wired into `Agent`.
+The coding package provides bounded data contracts, an offline mock, a local
+read-only analysis runtime, and deterministic diagnostics; it is not a
+general-purpose code runner. Source, comments, README/config text, and
+repository paths are untrusted data and never change policy or permissions.
+The analyzer and diagnostics engine make no provider or network calls and are
+not wired into `Agent`.
 
 - **Path boundary.** Project roots and each discovered file are resolved by
   the existing `Workspace` (including symlink/junction containment), then
@@ -679,26 +680,32 @@ network calls and is not wired into `Agent`.
   Generated/vendor trees and sensitive-looking names are excluded, and
   unsupported, binary, oversized, or invalid-UTF-8 files are not included as
   source snapshots. There is no parallel filesystem layer.
-- **Read-only analysis.** Only bounded validated files are opened in binary
-  read mode. Python is parsed to an AST without executing it; JavaScript and
-  TypeScript use a shallow fixed-pattern line scan; other supported formats
-  produce numeric metadata only. URLs and package scripts found in content are
-  never followed or run. Result models contain paths, hashes, sizes, counts,
-  symbols, and bounded diagnostics—not source contents.
+- **Read-only analysis and diagnostics.** Only bounded validated files are
+  opened in binary read mode; `CodeDiagnosticsEngine` receives the resulting
+  in-memory snapshot and cannot access paths. Python diagnostics use `ast.parse`
+  without executing source. JavaScript/TypeScript diagnostics use a shallow
+  delimiter/string/comment scan plus fixed whitespace checks, not a compiler
+  or full parser. Findings contain stable codes/categories, severity, path, and
+  optional line/column regions; messages do not echo source text. Other
+  supported formats produce numeric metadata only. URLs and package scripts
+  found in content are never followed or run. Result models contain paths,
+  hashes, sizes, counts, symbols, and bounded diagnostics—not source contents.
 - **Patch boundary.** Changes are full-file replacement proposals with the
   original SHA-256 and byte size as preconditions. Provider-supplied
-  validation status is advisory. Steps 1–2 do not write or apply patches; a
+  validation status is advisory. Steps 1–3 do not write or apply patches; a
   future write path must revalidate live source and use existing permission
   policy.
 - **No execution.** Test plans have no command field and enforce
   `execution_performed=False`. The package has no shell/process, compiler,
   package-installer, test/build runner, arbitrary code execution, network, or
   generic run-code capability.
-- **Bounds and limitation.** `CODING_*` settings are hard-clamped for project
+- **Bounds and limitation.** Existing `CodingLimits` hard-clamp project
   files, per-file bytes, total source chars, patches, changed files, symbols,
-  regions, diagnostics, analysis time, test duration, and output bytes. Step 2
-  checks the elapsed-time budget cooperatively; a single synchronous read or
-  parser call cannot be forcibly interrupted.
+  regions, diagnostics, analysis time, test duration, and output bytes; Step 3
+  adds no configuration or capability. Step 2 checks elapsed time
+  cooperatively; a single synchronous read/parser call cannot be forcibly
+  interrupted. The ECMAScript scanner is deliberately shallow and is not a
+  replacement for a language parser or compiler.
 
 ---
 
@@ -778,7 +785,7 @@ issue (do not post secrets or proof-of-concept exploit details publicly).
 | Persistent, redaction-aware audit log | PLANNED (Phase 12) |
 | Broader, separately reviewed computer workflows | NOT IMPLEMENTED (future; explicit named operations only) |
 | Bounded Phase 9 browser foundation (fixed tools, opt-in provider, bounded permissions/verification) | IMPLEMENTED |
-| Phase 10 Steps 1–2 coding models/provider contract/mock and bounded read-only runtime; no real provider | IMPLEMENTED |
+| Phase 10 Steps 1–3 coding models/provider contract/mock, bounded read-only runtime, and deterministic diagnostics; no real provider | IMPLEMENTED |
 | Coding source/path bounds through `Workspace`, hash-precondition proposals, metadata-only observations | IMPLEMENTED |
 | Coding write/apply, shell/process, arbitrary code, compiler, package install, test/build execution | NOT IMPLEMENTED (explicitly excluded) |
 | Unrestricted browser autonomy, host allowlist, and SSRF/DNS-rebinding defense | NOT IMPLEMENTED (documented limitation) |
