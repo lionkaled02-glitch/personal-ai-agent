@@ -29,7 +29,8 @@ This repository currently contains:
   boundary. Document content is untrusted data, never instructions.
 - **Phase 5: memory & RAG foundation** — a strongly typed,
   provider-neutral **memory model** (types, provenance, TTL, soft-delete)
-  behind the `MemoryStore` protocol (`InMemoryMemoryStore`), five
+  behind the `MemoryStore` protocol, with both in-memory and durable
+  SQLite-backed implementations, five
   permission-gated memory tools (`remember` MEDIUM, `update_memory` MEDIUM,
   `forget` HIGH, `recall` LOW, `list_memories` LOW), deterministic **lexical**
   memory retrieval behind the `MemoryRetriever` protocol, and a
@@ -78,6 +79,13 @@ This repository currently contains:
   `VERIFIED`/`FAILED`/`UNCERTAIN`. Deterministic mocks keep CI offline;
   Playwright is optional and never downloads browser binaries during core
   installation. This is not unrestricted autonomous browsing.
+- **Phase 11: Media generation** — bounded provider-neutral image/video request
+  and artifact models, deterministic offline generation, and a workspace/data-
+  bounded artifact writer with size and hash metadata. Real external media
+  providers remain optional and are not enabled by default.
+- **Phase 12: UI/API/Task Manager** — FastAPI task submission and inspection,
+  durable SQLite task/event/approval persistence, background task execution,
+  WebSocket event streaming, and a bundled browser UI with approval controls.
 - **Phase 10: Coding Agent foundation** — bounded provider-neutral project, source, analysis, structural patch, and test-plan models; workspace-backed path validation; `CODING_*` limits; an offline deterministic mock; a read-only local analyzer; deterministic Python/JavaScript/TypeScript diagnostics; and a separate MEDIUM permission-gated patch application runtime with live SHA-256/size preconditions and all-or-nothing preflight. Source and repository text remain untrusted data. There is no shell/command use, compiler, package installation, test/build execution, or real model integration.
 
 Remaining deliberate exclusions include generic web fetch/search, unrestricted browser automation, real microphone capture, external/cloud STT/TTS, vector/semantic retrieval, semantic vision/OCR/remote vision APIs, document/presentation generation, and unrestricted host command/code execution. Media generation, durable memory, and the bundled web UI/API/task manager are now implemented as bounded foundations.
@@ -161,8 +169,8 @@ A single Python package, `agent-core`, that proves the architecture works:
   `knowledge`), provenance (`user_explicit`/`task`/`agent`/`document`/
   `system` + optional source ref), confidence, timestamps, optional
   expiration, and a soft-delete `active` flag. Storage is behind the
-  `MemoryStore` protocol with the required `InMemoryMemoryStore`
-  (no external database, no network): limits and policy are enforced at the
+  `MemoryStore` protocol with `InMemoryMemoryStore` for offline use and `SQLiteMemoryStore` for
+  durable local persistence (no network): limits and policy are enforced at the
   store layer (allowed types, content length, metadata size, item cap,
   conservative secret heuristic), ordering is deterministic
   (`created_at`, then id), and `forget` is a soft deactivation by default
