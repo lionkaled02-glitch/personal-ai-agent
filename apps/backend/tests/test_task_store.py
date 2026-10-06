@@ -3,7 +3,7 @@ from pathlib import Path
 
 from agent_core.events import AgentEvent, EventType
 from agent_core.tasks import Task
-from src.task_store import TaskStore
+from task_store import TaskStore
 
 
 def test_task_and_event_round_trip(tmp_path: Path) -> None:
