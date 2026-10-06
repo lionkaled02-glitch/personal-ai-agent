@@ -48,7 +48,9 @@ def test_patch_requires_approval_and_applies_after_approval(tmp_path: Path) -> N
     target = root / "app.py"
     target.write_text("value = 1\n", encoding="utf-8", newline="")
 
-    result = CodingPatchRuntime(ws, permissions).apply(project, _patch("app.py", "value = 1\n", "value = 2\n"))
+    result = CodingPatchRuntime(ws, permissions).apply(
+        project, _patch("app.py", "value = 1\n", "value = 2\n")
+    )
 
     assert result.status == PatchApplicationStatus.APPLIED
     assert target.read_text(encoding="utf-8") == "value = 2\n"
