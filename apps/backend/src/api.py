@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 import uuid
-from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
-from typing import Any
+from pathlib import Path
 from threading import Event, Lock
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from agent_core import Agent, EventType, Settings, Task, TaskState, build_gateway
+from agent_core import Agent, Settings, Task, TaskState, build_gateway
 from .task_store import TaskStore
 
 settings = Settings.from_env()
