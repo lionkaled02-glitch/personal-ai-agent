@@ -7,8 +7,7 @@ repository. It explicitly distinguishes:
 - **PLANNED** — designed and on the roadmap, not yet built.
 - **NOT IMPLEMENTED** — desired, no design or code yet.
 
-The target is a modular personal autonomous AI agent. It is built
-**incrementally**, so most layers are intentionally not present yet.
+The target is a modular personal autonomous AI agent. The implemented system is intentionally bounded and fail-safe; remaining gaps are explicit in the roadmap.
 
 ---
 
@@ -19,11 +18,11 @@ dependency direction (a layer may depend only on layers below it).
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│  User Interface          (CLI today; desktop/web later)    │  NOT IMPLEMENTED
+│  User Interface          (bundled web UI)                 │  IMPLEMENTED
 ├────────────────────────────────────────────────────────────┤
-│  API                    (HTTP/WebSocket)                   │  NOT IMPLEMENTED
+│  API                    (HTTP/WebSocket)                   │  IMPLEMENTED
 ├────────────────────────────────────────────────────────────┤
-│  Task Manager           (task store, queue, persistence)   │  NOT IMPLEMENTED
+│  Task Manager           (task store, approvals, persistence) │ IMPLEMENTED
 ├────────────────────────────────────────────────────────────┤
 │  Agent Orchestrator     (Agent + Executor)                 │  IMPLEMENTED
 ├────────────────────────────────────────────────────────────┤
@@ -49,14 +48,7 @@ implemented. Provider-neutral computer and browser foundations exist, with
 optional Windows UI Automation and Playwright adapters; unrestricted browser
 or computer control does not.
 
-The implemented portion is the middle band: **Orchestrator → Planner →
-Model Gateway → Provider → Tool Registry → Permission**, plus the opt-in
-Phase 6 computer runtime, the Phase 7 visual layer over its screenshot path,
-the Phase 8 voice transport, and the Phase 9 bounded browser runtime. Phase
-10 Step 1 adds a non-executing coding data/provider foundation; it is not
-wired into the Agent loop and has no write or test-execution runtime. The
-integrated capabilities use the same Agent loop and permission system. The
-events backbone runs alongside them.
+The implemented system includes the Agent loop, model gateway, tool runtime, permissions, bounded computer/vision/voice/browser/coding/media capabilities, durable task/event/approval persistence, persistent memory, and the bundled web UI/API. Specialized capabilities remain opt-in and provider-neutral where external integrations are intentionally excluded.
 
 ---
 
@@ -115,13 +107,13 @@ All implemented code lives in the single package
 | `browser/runtime.py`, `browser/verification.py`, `browser/recovery.py` | `BrowserRuntime`, explicit named operations, `VERIFIED`/`FAILED`/`UNCERTAIN`, safe recovery | Shared permission/event integration; observe → authorize → act → fresh observe → verify; sensitive-control blocking, page-text redaction, exact named-page targeting, one bounded navigation retry only for explicitly retryable safe failures, no high-risk retries. | IMPLEMENTED |
 | `browser/mock.py`, `browser/playwright_provider.py` | `MockBrowserProvider`, `PlaywrightBrowserProvider` | Deterministic offline provider; optional Playwright sync provider loaded only at launch, with new ephemeral contexts, no profile persistence, scheme checks on navigations, and bounded text/elements/screenshots. Playwright binaries are separate from the Python extra. | IMPLEMENTED |
 | `browser/serialization.py`, `browser/tools.py` | Safe projections, `BROWSER_TOOL_NAMES`, `register_browser_tools` | Fixed explicit LOW/MEDIUM/HIGH-classified tools; sensitive Tool Runtime I/O is event-redacted. `BrowserActionResult` uncertainty/failure is not reported as tool success. No arbitrary browser action dispatcher. | IMPLEMENTED |
-| `coding/models.py` | `CodingProject`, `CodeFile`, bounded analysis/edit/test-plan models, categorized `CodeDiagnostic`, `CodePatch`, `CodingObservation` | Provider-neutral data contracts; source/repository/provider text remains untrusted, source fields are hidden from repr, and observations contain metadata only. Diagnostics carry bounded categories, severity, paths, and optional source regions. Proposed replacements use original SHA-256/size preconditions; no patch is applied. | IMPLEMENTED |
-| `coding/interfaces.py`, `coding/limits.py`, `coding/errors.py` | `CodingProvider`, `CodingLimits`, `CodingOperation`, structured errors | Bounded analysis, edit-proposal, test-planning, and diagnostics contract; `CODING_*` settings are hard-clamped. The only operations are LOW-risk data/planning operations; there is no write/apply, code-execution, or test-execution interface. | IMPLEMENTED |
+| `coding/models.py` | `CodingProject`, `CodeFile`, bounded analysis/edit/test-plan models, categorized `CodeDiagnostic`, `CodePatch`, `CodingObservation` | Provider-neutral data contracts; source/repository/provider text remains untrusted, source fields are hidden from repr, and observations contain metadata only. Diagnostics carry bounded categories, severity, paths, and optional source regions. Proposed replacements use original SHA-256/size preconditions. Patch application is a separate permission-gated mutation step with all-or-nothing preflight and atomic writes. | IMPLEMENTED |
+| `coding/interfaces.py`, `coding/limits.py`, `coding/errors.py` | `CodingProvider`, `CodingLimits`, `CodingOperation`, structured errors | Bounded analysis, edit-proposal, test-planning, and diagnostics contract; `CODING_*` settings are hard-clamped. The analysis/planning operations are LOW-risk; patch application is MEDIUM permission-gated. There is still no arbitrary code execution, compiler invocation, package installation, or host test execution. | IMPLEMENTED |
 | `coding/runtime.py`, `coding/diagnostics.py` | `CodingAnalysisRuntime`, `CodeDiagnosticsEngine` | Workspace-scoped read-only discovery and deterministic bounded Python/JavaScript/TypeScript syntax/style diagnostics; no code execution, compiler, or external provider. Diagnostics apply shared `CodingLimits`. | IMPLEMENTED |
 | `coding/mock.py` | `MockCodingProvider` | Deterministic offline mock with optional sanitized failure/timeout simulation. It only consumes supplied snapshots and returns proposals/plans; it has no filesystem, network, process, compiler, or test-run capability. | IMPLEMENTED |
 | `agent.py` | `Agent` | Facade wiring planner + registry + permissions + events + executor into canonical `run(request)`. Voice uses the same loop once; Phase 6 computer, Phase 7 vision, and Phase 9 browser tools are opt-in with explicitly supplied providers. Browser tools share the Agent's event bus and permission manager. | IMPLEMENTED |
 
-Entry point: `apps/backend/src/main.py` (demo, mock provider by default, no API key).
+Entry points: `apps/backend/src/main.py` for the bounded API service and the bundled static web UI. The demo/mock path remains available without an API key.
 
 ---
 
