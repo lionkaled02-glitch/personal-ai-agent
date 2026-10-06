@@ -1011,6 +1011,69 @@ class CodingAnalysisRuntime:
         return result
 
 
+def _read_verified_snapshot(
+    workspace: Workspace,
+    limits: CodingLimits,
+    project: CodingProject,
+    analyzed: AnalyzedCodeFile,
+    *,
+    remaining_chars: int,
+) -> CodeFile | None:
+    """Re-read one prior snapshot only if its path and content still match."""
+    if remaining_chars < 0:
+        return None
+    try:
+        canonical_relative = project.resolve_file_path(workspace, analyzed.path)
+        if canonical_relative != analyzed.path:
+            return None
+        resolved = workspace.resolve(canonical_relative)
+    except (CodingWorkspaceError, WorkspaceError):
+        return None
+
+    if (
+        _is_sensitive_filename(Path(canonical_relative).name)
+        or _is_sensitive_filename(resolved.name)
+        or _classify_file(resolved) is not analyzed.language
+    ):
+        return None
+    try:
+        file_stat = resolved.stat()
+    except OSError:
+        return None
+    if not stat.S_ISREG(file_stat.st_mode):
+        return None
+
+    file_limit = min(
+        limits.max_file_size_bytes,
+        max(0, workspace.limits.max_read_bytes),
+    )
+    byte_budget = min(file_limit, remaining_chars * 4 + 3)
+    if file_stat.st_size > byte_budget:
+        return None
+    try:
+        with resolved.open("rb") as handle:
+            data = handle.read(byte_budget + 1)
+    except OSError:
+        return None
+    if len(data) > file_limit or len(data) > byte_budget or b"\x00" in data:
+        return None
+    try:
+        source_text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return None
+    if len(source_text) > remaining_chars:
+        return None
+
+    source = CodeFile(path=canonical_relative, content=source_text)
+    if (
+        source.size_bytes != analyzed.size_bytes
+        or len(source.content) != analyzed.source_chars
+        or source.source_sha256 != analyzed.source_sha256
+    ):
+        return None
+    return source
+
+
 def _contains_parent_traversal(path: str) -> bool:
     """Reject explicit parent segments before Workspace canonicalization."""
     return any(part == ".." for part in re.split(r"[\\/]", path))

@@ -115,9 +115,9 @@ All implemented code lives in the single package
 | `browser/runtime.py`, `browser/verification.py`, `browser/recovery.py` | `BrowserRuntime`, explicit named operations, `VERIFIED`/`FAILED`/`UNCERTAIN`, safe recovery | Shared permission/event integration; observe → authorize → act → fresh observe → verify; sensitive-control blocking, page-text redaction, exact named-page targeting, one bounded navigation retry only for explicitly retryable safe failures, no high-risk retries. | IMPLEMENTED |
 | `browser/mock.py`, `browser/playwright_provider.py` | `MockBrowserProvider`, `PlaywrightBrowserProvider` | Deterministic offline provider; optional Playwright sync provider loaded only at launch, with new ephemeral contexts, no profile persistence, scheme checks on navigations, and bounded text/elements/screenshots. Playwright binaries are separate from the Python extra. | IMPLEMENTED |
 | `browser/serialization.py`, `browser/tools.py` | Safe projections, `BROWSER_TOOL_NAMES`, `register_browser_tools` | Fixed explicit LOW/MEDIUM/HIGH-classified tools; sensitive Tool Runtime I/O is event-redacted. `BrowserActionResult` uncertainty/failure is not reported as tool success. No arbitrary browser action dispatcher. | IMPLEMENTED |
-| `coding/models.py` | `CodingProject`, `CodeFile`, bounded analysis/edit/test-plan models, categorized `CodeDiagnostic`, `CodePatch`, `CodingObservation` | Provider-neutral data contracts; source/repository/provider text remains untrusted, source fields are hidden from repr, and observations contain metadata only. Diagnostics carry bounded categories, severity, paths, and optional source regions. Proposed replacements use original SHA-256/size preconditions; no patch is applied. | IMPLEMENTED |
-| `coding/interfaces.py`, `coding/limits.py`, `coding/errors.py` | `CodingProvider`, `CodingLimits`, `CodingOperation`, structured errors | Bounded analysis, edit-proposal, test-planning, and diagnostics contract; `CODING_*` settings are hard-clamped. The only operations are LOW-risk data/planning operations; there is no write/apply, code-execution, or test-execution interface. | IMPLEMENTED |
-| `coding/runtime.py`, `coding/diagnostics.py` | `CodingAnalysisRuntime`, `CodeDiagnosticsEngine` | Workspace-scoped read-only discovery and deterministic bounded Python/JavaScript/TypeScript syntax/style diagnostics; no code execution, compiler, or external provider. Diagnostics apply shared `CodingLimits`. | IMPLEMENTED |
+| `coding/models.py` | `CodingProject`, `CodeFile`, bounded analysis/edit/test-plan/search models, categorized `CodeDiagnostic`, `CodePatch`, `CodingObservation` | Provider-neutral data contracts; source/repository/provider text remains untrusted, source fields are hidden from repr, observations contain metadata only, and search hits carry only a short bounded context. Diagnostics carry bounded categories, severity, paths, and optional source regions. Proposed replacements use original SHA-256/size preconditions; no patch is applied. | IMPLEMENTED |
+| `coding/interfaces.py`, `coding/limits.py`, `coding/errors.py` | `CodingProvider`, `CodingLimits`, `CodingOperation`, structured errors | Bounded analysis, literal search/navigation, edit-proposal, test-planning, and diagnostics contract; `CODING_*` settings are hard-clamped. The only operations are LOW-risk data/search/planning operations; there is no write/apply, code-execution, or test-execution interface. | IMPLEMENTED |
+| `coding/runtime.py`, `coding/diagnostics.py`, `coding/search.py` | `CodingAnalysisRuntime`, `CodeDiagnosticsEngine`, `CodeSearchRuntime` | Workspace-scoped read-only discovery, deterministic bounded Python/JavaScript/TypeScript diagnostics, literal text/symbol/path search, and definition navigation. Search is restricted to the analyzed file set, revalidates source hashes before snippets, and applies shared `CodingLimits`; no execution, compiler, or external provider. | IMPLEMENTED |
 | `coding/mock.py` | `MockCodingProvider` | Deterministic offline mock with optional sanitized failure/timeout simulation. It only consumes supplied snapshots and returns proposals/plans; it has no filesystem, network, process, compiler, or test-run capability. | IMPLEMENTED |
 | `agent.py` | `Agent` | Facade wiring planner + registry + permissions + events + executor into canonical `run(request)`. Voice uses the same loop once; Phase 6 computer, Phase 7 vision, and Phase 9 browser tools are opt-in with explicitly supplied providers. Browser tools share the Agent's event bus and permission manager. | IMPLEMENTED |
 
@@ -251,12 +251,13 @@ ordinary CI uses only the mock provider (no internet or browser binary).
 Unrestricted autonomous browsing, CAPTCHA/anti-bot bypass, credential
 harvesting, and authenticated profile reuse are not provided.
 
-### Coding foundation (Phase 10, Steps 1–3 — IMPLEMENTED)
+### Coding foundation (Phase 10, Steps 1–4 — IMPLEMENTED)
 
-`agent_core.coding` defines bounded project/file/region, analysis, edit-proposal,
-test-plan, patch, and metadata-only observation models; provider-neutral
-`CodeDiagnostic` records; `CodingProvider`; `CodingLimits` from `CODING_*`
-settings; content-free structured errors; and a deterministic offline mock.
+`agent_core.coding` defines bounded project/file/region, analysis, search,
+edit-proposal, test-plan, patch, and metadata-only observation models;
+provider-neutral `CodeDiagnostic` records; `CodingProvider`; `CodingLimits`
+from `CODING_*` settings; content-free structured errors; and a deterministic
+offline mock.
 All workspace-relative paths are checked through the existing
 `Workspace.resolve()` boundary and then constrained to the resolved project
 root. Proposed full-file replacements carry the original SHA-256 and size as
@@ -280,7 +281,18 @@ checks. Diagnostics carry stable codes/categories, severity, workspace-relative
 path, and source region when available. The existing diagnostic and region
 limits apply; no new configuration is introduced.
 
-Steps 1–3 do not write/apply patches, run tests/builds/compilers, install
+Step 4 adds `CodeSearchRuntime` for literal text, symbol-name, file/path, and
+exact symbol-definition search. It uses the analyzer's bounded eligible-file
+set, revalidates each source path through `Workspace`, and verifies the
+previously analyzed size/hash before returning a snippet. Results contain
+workspace-relative paths, locations and symbol kinds when available, plus at
+most 160 context characters. `CODING_MAX_SEARCH_RESULTS`, shared source/file
+and output byte bounds, and cooperative analysis/search time caps limit the
+work. Queries are not regular expressions, and source/query/context text
+remains untrusted data.
+Search performs no writes and has no provider dependency.
+
+Steps 1–4 do not write/apply patches, run tests/builds/compilers, install
 packages, launch commands, access the network, execute source, or connect a real
 model. Test plans carry no executable command and always report
 `execution_performed=False`. Step 2's elapsed-time checks are cooperative; a
@@ -497,16 +509,17 @@ Each decision lists the *why*, per the AGENTS.md rule to document decisions.
   isolation must enforce network egress controls. No arbitrary JavaScript,
   cookie/storage/profile API, challenge bypass, or unrestricted browser agent
   exists in this phase.
-- **D24 — Coding is split between read-only analysis and proposal data.**
+- **D24 — Coding is split between read-only analysis/search and proposal data.**
   Phase 10 Step 1 accepts bounded source snapshots, treats all
   repository/provider text as untrusted, and represents edits as full-file
   replacements with source-hash preconditions. Step 2 adds local read-only
-  analysis through `Workspace`; Step 3 adds deterministic diagnostics over
-  those validated snapshots only. Neither step writes or executes source text
-  or makes network calls. Reusing `Workspace.resolve()` keeps path safety in
-  one place. Patch application, commands/tests, and real providers remain out
-  of scope. Any future write must be a separate explicit operation using the
-  existing permission system.
+  analysis through `Workspace`; Step 3 adds deterministic diagnostics; Step 4
+  adds literal search/navigation over hash-verified analyzed snapshots and
+  bounded context excerpts. These local operations do not write or execute
+  source text or make network calls. Reusing `Workspace.resolve()` keeps path
+  safety in one place. Patch application, commands/tests, and real providers
+  remain out of scope. Any future write must be a separate explicit operation
+  using the existing permission system.
 
 ---
 
@@ -529,8 +542,9 @@ These are **NOT IMPLEMENTED** and must not be added prematurely
   Phase 9 adds only fixed browser operations in D23. The Playwright URL checks
   are not a domain/SSRF allowlist. There is no shell, process launch, arbitrary
   code execution, remote desktop, screenshot persistence, or generic computer
-  or browser action tool. Phase 10 Steps 1–3 provide coding contracts, a mock,
-  a bounded read-only local analyzer, and deterministic diagnostics; patch
+  or browser action tool. Phase 10 Steps 1–4 provide coding contracts, a mock,
+  a bounded read-only local analyzer, deterministic diagnostics, and code
+  search/navigation; patch
   application, source writes, command use, and test/build execution are NOT
   IMPLEMENTED.
 - Output verification beyond "all steps completed" (a richer `Verifier`).

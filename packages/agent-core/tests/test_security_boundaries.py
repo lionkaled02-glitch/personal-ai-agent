@@ -16,9 +16,9 @@ Two complementary guards:
    secret-like content atomically; expired memories are excluded; nothing is
    auto-persisted from conversation; memory operations respect the
    permission system.
-4. **Coding foundation (Phase 10, Steps 1-3)**: the coding package is offline
-   data/proposal planning, bounded read-only `Workspace` analysis, and
-   deterministic in-memory diagnostics; it has no write, command, network,
+4. **Coding foundation (Phase 10, Steps 1-4)**: the coding package is offline
+   data/proposal planning, bounded read-only `Workspace` analysis and search,
+   and deterministic in-memory diagnostics; it has no write, command, network,
    compiler, or test-execution capability.
 
 These tests run fully offline.

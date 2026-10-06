@@ -1,9 +1,9 @@
 """Bounded provider-neutral models for the Phase 10 coding foundation.
 
-Source and provider text are untrusted data. These models describe bounded
-snapshots and proposals only; they do not read, write, execute, or validate
-source code. Use :class:`CodingProject` with the existing :class:`Workspace`
-before passing paths to a provider.
+Source, query, and provider text are untrusted data. These models describe
+bounded snapshots, proposals, and search hits only; they do not read, write,
+execute, or validate source code. Use :class:`CodingProject` with the existing
+:class:`Workspace` before passing paths to a provider.
 """
 
 from __future__ import annotations
@@ -35,6 +35,9 @@ MAX_CODING_TEST_DURATION_S = 3_600.0
 MAX_CODING_OUTPUT_BYTES = 2 * 1_024 * 1_024
 MAX_CODING_OUTPUT_TEXT_CHARS = 32_768
 MAX_CODING_REQUEST_CHARS = 8_000
+MAX_CODING_SEARCH_QUERY_CHARS = 512
+MAX_CODING_SEARCH_RESULTS = 1_000
+MAX_CODING_SEARCH_CONTEXT_CHARS = 160
 
 _SHA256_PATTERN = r"^[0-9a-f]{64}$"
 _PROJECT_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"
@@ -494,6 +497,105 @@ class CodeAnalysisResult(CodingModel):
                 resolved = project.resolve_file_path(workspace, diagnostic.region.path)
                 if resolved not in observed_paths:
                     raise CodingWorkspaceError()
+
+
+class CodeSearchMode(StrEnum):
+    """Literal search operations supported by the local read-only runtime."""
+
+    TEXT = "text"
+    SYMBOL = "symbol"
+    FILE_PATH = "file_path"
+    DEFINITION = "definition"
+
+
+class CodeSearchLimitReason(StrEnum):
+    """Reasons a bounded project search may return partial results."""
+
+    ANALYSIS_INCOMPLETE = "analysis_incomplete"
+    RESULT_LIMIT = "result_limit"
+    SOURCE_CHANGED = "source_changed"
+    TIME_LIMIT = "time_limit"
+    OUTPUT_LIMIT = "output_limit"
+
+
+class CodeSearchRequest(CodingModel):
+    """One bounded literal search; query text is untrusted data, never code."""
+
+    mode: CodeSearchMode
+    query: str = Field(
+        min_length=1,
+        max_length=MAX_CODING_SEARCH_QUERY_CHARS,
+        strict=True,
+        repr=False,
+    )
+    case_sensitive: bool = False
+
+    @model_validator(mode="after")
+    def validate_literal_query(self) -> CodeSearchRequest:
+        if not self.query.strip() or any(char in self.query for char in "\x00\r\n"):
+            raise ValueError("search query must be non-empty single-line text")
+        return self
+
+
+class CodeSearchMatch(CodingModel):
+    """One bounded literal hit with a short, untrusted source/path context."""
+
+    path: str = Field(min_length=1, max_length=MAX_CODING_PATH_CHARS, strict=True)
+    line: int | None = Field(default=None, ge=1, le=MAX_CODING_FILE_CHARS, strict=True)
+    column: int | None = Field(default=None, ge=1, le=16_384, strict=True)
+    symbol: str | None = Field(default=None, max_length=256, strict=True)
+    symbol_kind: CodeSymbolKind | None = None
+    context: str = Field(
+        min_length=1,
+        max_length=MAX_CODING_SEARCH_CONTEXT_CHARS,
+        strict=True,
+        repr=False,
+    )
+
+    @model_validator(mode="after")
+    def validate_match_shape(self) -> CodeSearchMatch:
+        if self.column is not None and self.line is None:
+            raise ValueError("a search column requires a line")
+        if (self.symbol is None) != (self.symbol_kind is None):
+            raise ValueError("symbol name and kind must be present together")
+        if self.symbol is not None and self.line is None:
+            raise ValueError("a symbol search match requires a definition line")
+        return self
+
+
+class CodeSearchResult(CodingModel):
+    """Bounded search hits; snippets remain untrusted data, not instructions."""
+
+    project_id: str = Field(min_length=1, max_length=64, pattern=_PROJECT_ID_PATTERN, strict=True)
+    mode: CodeSearchMode
+    query: str = Field(
+        min_length=1,
+        max_length=MAX_CODING_SEARCH_QUERY_CHARS,
+        strict=True,
+        repr=False,
+    )
+    matches: tuple[CodeSearchMatch, ...] = Field(max_length=MAX_CODING_SEARCH_RESULTS)
+    truncated: bool = False
+    limit_reasons: tuple[CodeSearchLimitReason, ...] = Field(default=(), max_length=5)
+
+    @model_validator(mode="after")
+    def validate_search_result(self) -> CodeSearchResult:
+        if not self.query.strip() or any(char in self.query for char in "\x00\r\n"):
+            raise ValueError("search result query must be non-empty single-line text")
+        if len(self.limit_reasons) != len(set(self.limit_reasons)):
+            raise ValueError("search result contains duplicate limit reasons")
+        if self.truncated != bool(self.limit_reasons):
+            raise ValueError("search truncation flag and limit reasons do not match")
+        return self
+
+    def validate_workspace(self, project: CodingProject, workspace: Workspace) -> None:
+        """Recheck every returned path against the project/workspace boundary."""
+        if project.project_id != self.project_id:
+            raise CodingWorkspaceError()
+        for match in self.matches:
+            resolved = project.resolve_file_path(workspace, match.path)
+            if resolved != match.path:
+                raise CodingWorkspaceError()
 
 
 class CodeEditRequest(CodingModel):

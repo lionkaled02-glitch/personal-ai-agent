@@ -1,4 +1,4 @@
-"""Provider-neutral contracts for bounded coding analysis and planning."""
+"""Provider-neutral contracts for bounded coding analysis, search, and planning."""
 
 from __future__ import annotations
 
@@ -18,9 +18,10 @@ from .models import (
 
 
 class CodingOperation(StrEnum):
-    """Step 1 operations are analysis/planning only and therefore LOW risk."""
+    """Local analysis, search, and planning operations are LOW risk."""
 
     ANALYZE = "coding_analyze"
+    SEARCH = "coding_search"
     PROPOSE_EDITS = "coding_propose_edits"
     PLAN_TESTS = "coding_plan_tests"
 

@@ -1,4 +1,4 @@
-"""Focused deterministic tests for the Phase 10 Step 1 coding foundation."""
+"""Focused deterministic tests for the Phase 10 coding contracts and limits."""
 
 from __future__ import annotations
 
@@ -63,6 +63,7 @@ from agent_core.coding.models import (
     MAX_CODING_PATCH_SIZE_BYTES,
     MAX_CODING_PROJECT_FILES,
     MAX_CODING_REGIONS,
+    MAX_CODING_SEARCH_RESULTS,
     MAX_CODING_SOURCE_CHARS,
     MAX_CODING_SYMBOLS,
     MAX_CODING_TEST_DURATION_S,
@@ -436,6 +437,7 @@ class TestCodingLimits:
                 "CODING_MAX_SYMBOLS": "12",
                 "CODING_MAX_REGIONS": "9",
                 "CODING_MAX_DIAGNOSTICS": "8",
+                "CODING_MAX_SEARCH_RESULTS": "6",
                 "CODING_MAX_ANALYSIS_TIME_S": "4.5",
                 "CODING_MAX_TEST_DURATION_S": "60",
                 "CODING_MAX_OUTPUT_BYTES": "8192",
@@ -450,6 +452,7 @@ class TestCodingLimits:
         assert limits.max_symbols == 12
         assert limits.max_regions == 9
         assert limits.max_diagnostics == 8
+        assert limits.max_search_results == 6
         assert limits.max_analysis_time_s == 4.5
         assert limits.max_test_duration_s == 60.0
         assert limits.max_output_bytes == 8192
@@ -465,6 +468,7 @@ class TestCodingLimits:
             ("max_symbols", MAX_CODING_SYMBOLS + 1),
             ("max_regions", MAX_CODING_REGIONS + 1),
             ("max_diagnostics", MAX_CODING_DIAGNOSTICS + 1),
+            ("max_search_results", MAX_CODING_SEARCH_RESULTS + 1),
             ("max_analysis_time_s", MAX_CODING_ANALYSIS_TIME_S + 0.1),
             ("max_test_duration_s", MAX_CODING_TEST_DURATION_S + 1.0),
             ("max_output_bytes", MAX_CODING_OUTPUT_BYTES + 1),
@@ -552,7 +556,7 @@ class TestCodingLimits:
 
 
 class TestCodingPermissionsAndErrors:
-    def test_analysis_proposals_and_test_plans_are_low_permission_only(self) -> None:
+    def test_coding_operations_are_low_permission_only(self) -> None:
         class Descriptor:
             def __init__(self, operation: CodingOperation) -> None:
                 self.name = operation.value
@@ -564,6 +568,7 @@ class TestCodingPermissionsAndErrors:
             assert manager.check(Descriptor(operation)) is PermissionDecision.ALLOWED
         assert {operation.value for operation in CodingOperation} == {
             "coding_analyze",
+            "coding_search",
             "coding_propose_edits",
             "coding_plan_tests",
         }

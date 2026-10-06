@@ -75,14 +75,15 @@ Variables:
   ``CODING_MAX_SOURCE_CHARS`` / ``CODING_MAX_PATCH_SIZE_BYTES`` /
   ``CODING_MAX_CHANGED_FILES`` / ``CODING_MAX_SYMBOLS`` /
   ``CODING_MAX_REGIONS`` / ``CODING_MAX_DIAGNOSTICS`` /
-  ``CODING_MAX_ANALYSIS_TIME_S`` / ``CODING_MAX_TEST_DURATION_S`` /
-  ``CODING_MAX_OUTPUT_BYTES`` (Phase 10 bounded coding foundation)
+  ``CODING_MAX_SEARCH_RESULTS`` / ``CODING_MAX_ANALYSIS_TIME_S`` /
+  ``CODING_MAX_TEST_DURATION_S`` / ``CODING_MAX_OUTPUT_BYTES`` (Phase 10
+  bounded coding foundation)
 
 Voice time limits are cooperative because synchronous provider calls cannot
 be forcibly interrupted. Phase 8 adds no microphone hardware, API keys, or
 external STT/TTS provider. Phase 10 adds bounded coding data contracts, a
-local mock, read-only analysis, and deterministic diagnostics; it adds no
-source writes, command execution, or real provider.
+local mock, read-only analysis, deterministic diagnostics, and literal code
+search/navigation; it adds no source writes, command execution, or real provider.
 
 ``DATA_ROOT`` holds logs and task artifacts; it is independent of the
 workspace boundary, which the Phase 3 filesystem tools enforce strictly.
@@ -184,7 +185,7 @@ class Settings(BaseModel):
     browser_max_action_time_s: float = 5.0
     browser_max_wait_time_s: float = 5.0
     browser_max_retries: int = 1
-    # Coding Agent foundation (Phase 10, Steps 1-3) — data/plan/analysis/diagnostic bounds.
+    # Coding Agent foundation (Phase 10, Steps 1-4) — data/plan/analysis/search bounds.
     coding_max_project_files: int = 100
     coding_max_file_size_bytes: int = 524_288
     coding_max_source_chars: int = 500_000
@@ -193,6 +194,7 @@ class Settings(BaseModel):
     coding_max_symbols: int = 200
     coding_max_regions: int = 100
     coding_max_diagnostics: int = 100
+    coding_max_search_results: int = 100
     coding_max_analysis_time_s: float = 20.0
     coding_max_test_duration_s: float = 120.0
     coding_max_output_bytes: int = 262_144
@@ -439,6 +441,9 @@ class Settings(BaseModel):
             coding_max_regions=int(source.get("CODING_MAX_REGIONS", defaults.coding_max_regions)),
             coding_max_diagnostics=int(
                 source.get("CODING_MAX_DIAGNOSTICS", defaults.coding_max_diagnostics)
+            ),
+            coding_max_search_results=int(
+                source.get("CODING_MAX_SEARCH_RESULTS", defaults.coding_max_search_results)
             ),
             coding_max_analysis_time_s=float(
                 source.get("CODING_MAX_ANALYSIS_TIME_S", defaults.coding_max_analysis_time_s)

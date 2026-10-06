@@ -408,13 +408,14 @@ installation and CI do not import Playwright or require browser binaries.
 
 ---
 
-## Phase 10 — Coding Agent Foundation (Steps 1–3) ✅ IMPLEMENTED
+## Phase 10 — Coding Agent Foundation (Steps 1–4) ✅ IMPLEMENTED
 
 Step 1 establishes bounded provider-neutral contracts; Step 2 adds a local,
 read-only analyzer; Step 3 adds deterministic diagnostics for Python,
-JavaScript, and TypeScript snapshots. Code and repository text are untrusted
-data, paths use the existing `Workspace` containment/symlink boundary, and the
-mock, analyzer, and diagnostics engine make no network requests.
+JavaScript, and TypeScript snapshots; Step 4 adds bounded literal text, symbol,
+file/path, and definition search. Code and repository text are untrusted data,
+paths use the existing `Workspace` containment/symlink boundary, and the mock,
+analyzer, diagnostics, and search runtime make no network requests.
 
 | Item | Status |
 | --- | --- |
@@ -425,7 +426,8 @@ mock, analyzer, and diagnostics engine make no network requests.
 | Read-only `CodingAnalysisRuntime`; bounded discovery, UTF-8 snapshots, Python AST, shallow JS/TS scan, metadata-only formats | IMPLEMENTED |
 | Explicit analyzed/skipped file metadata, truncation reasons, and file/entry/output bounds | IMPLEMENTED |
 | `CodeDiagnosticsEngine`; bounded Python syntax, JavaScript/TypeScript delimiter, and shared style diagnostics | IMPLEMENTED |
-| Coding tools, source writes, patch application, test/build execution | NOT IMPLEMENTED (outside Steps 1–3) |
+| `CodeSearchRuntime`; bounded literal text/symbol/path search and exact symbol-definition navigation with short context | IMPLEMENTED |
+| Coding tools, source writes, patch application, test/build execution | NOT IMPLEMENTED (outside Steps 1–4) |
 | Shell/process/command use, arbitrary execution, compilers, package installation, real model providers | NOT IMPLEMENTED (explicitly excluded) |
 
 **Acceptance:** proposed replacements remain structured data and are checked
@@ -434,15 +436,19 @@ workspace paths; analysis reads only validated project files and reports
 bounded symbols, categorized diagnostics, skipped files, and truncation;
 diagnostics include severity, stable code, path, and a source region when
 available; test plans cannot report execution; configured input, diagnostic,
-region, and output limits remain enforced. No phase grants command or
-arbitrary-code access.
+region, search-result, context, time, and output limits remain enforced. Search
+uses only analyzed supported files, literal matching (not regular expressions),
+and verifies the source hash again before returning context. No phase grants
+command or arbitrary-code access.
 
-**Known limitation:** analysis uses cooperative wall-clock checks around
-synchronous reads/parsers; a single bounded operation cannot be forcibly
-interrupted. JavaScript/TypeScript diagnostics use a shallow lexical scan, not
-full language parsers or compilers; regex literals and template interpolation
-are not fully parsed. The runtime never writes files, applies patches, launches
-commands, installs packages, executes builds/tests, or connects a real model.
+**Known limitation:** analysis and search use cooperative wall-clock checks
+around synchronous reads/parsers; a single bounded operation cannot be forcibly
+interrupted. Search does a second bounded read and omits a file if its analyzed
+hash has changed. JavaScript/TypeScript diagnostics use a shallow lexical scan,
+not full language parsers or compilers; regex literals and template
+interpolation are not fully parsed. The runtime never writes files, applies
+patches, launches commands, installs packages, executes builds/tests, or
+connects a real model.
 Any future write path must be a separate operation, use the existing
 permission system, and revalidate the patch against the live workspace.
 

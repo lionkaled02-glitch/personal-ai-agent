@@ -112,10 +112,10 @@ provider can access HTTP(S) sites and therefore adds real network egress.
 Phase 8 `VoiceRuntime` providers are also explicit in-process dependencies;
 the built-in voice mocks use no hardware, network access, or keys. Voice
 transcripts and browser page content never grant permissions by themselves.
-Phase 10 Steps 1–3 add coding contracts, an offline mock, a local read-only
-analysis runtime, and deterministic diagnostics over validated source
-snapshots. They are not wired into `Agent`; analysis exposes the existing LOW
-`coding_analyze` permission descriptor and has no write or execution path.
+Phase 10 Steps 1–4 add coding contracts, an offline mock, a local read-only
+analysis runtime, deterministic diagnostics, and literal code search over
+validated source snapshots. They are not wired into `Agent`; analysis and
+search expose LOW permission descriptors and have no write or execution path.
 
 ### Tool runtime security (Phase 2)
 
@@ -664,14 +664,14 @@ not download Chromium or enable browser use by itself.
   approval interface. Deployments must use their own network controls and
   approval UI/callback as appropriate.
 
-### Coding foundation security (Phase 10, Steps 1–3)
+### Coding foundation security (Phase 10, Steps 1–4)
 
 The coding package provides bounded data contracts, an offline mock, a local
-read-only analysis runtime, and deterministic diagnostics; it is not a
-general-purpose code runner. Source, comments, README/config text, and
-repository paths are untrusted data and never change policy or permissions.
-The analyzer and diagnostics engine make no provider or network calls and are
-not wired into `Agent`.
+read-only analysis runtime, deterministic diagnostics, and literal code search;
+it is not a general-purpose code runner. Source, comments, README/config text,
+search queries, snippets, and repository paths are untrusted data and never
+change policy or permissions. The analyzer, diagnostics engine, and search
+runtime make no provider or network calls and are not wired into `Agent`.
 
 - **Path boundary.** Project roots and each discovered file are resolved by
   the existing `Workspace` (including symlink/junction containment), then
@@ -688,11 +688,19 @@ not wired into `Agent`.
   or full parser. Findings contain stable codes/categories, severity, path, and
   optional line/column regions; messages do not echo source text. Other
   supported formats produce numeric metadata only. URLs and package scripts
-  found in content are never followed or run. Result models contain paths,
+  found in content are never followed or run. Analysis results contain paths,
   hashes, sizes, counts, symbols, and bounded diagnostics—not source contents.
+- **Search and navigation.** Queries are bounded literal text, never regular
+  expressions or commands. Search begins with the analyzer's eligible file and
+  symbol set, then re-resolves each file through `Workspace` and rechecks its
+  supported/sensitive classification, size, UTF-8/NUL status, and analyzed
+  content hash before exposing a short context. A file changed between passes
+  is omitted and reported as a partial result. Search result count, context,
+  output bytes, source volume, and elapsed time are bounded; paths in results
+  are revalidated against the project.
 - **Patch boundary.** Changes are full-file replacement proposals with the
   original SHA-256 and byte size as preconditions. Provider-supplied
-  validation status is advisory. Steps 1–3 do not write or apply patches; a
+  validation status is advisory. Steps 1–4 do not write or apply patches; a
   future write path must revalidate live source and use existing permission
   policy.
 - **No execution.** Test plans have no command field and enforce
@@ -701,11 +709,12 @@ not wired into `Agent`.
   generic run-code capability.
 - **Bounds and limitation.** Existing `CodingLimits` hard-clamp project
   files, per-file bytes, total source chars, patches, changed files, symbols,
-  regions, diagnostics, analysis time, test duration, and output bytes; Step 3
-  adds no configuration or capability. Step 2 checks elapsed time
-  cooperatively; a single synchronous read/parser call cannot be forcibly
-  interrupted. The ECMAScript scanner is deliberately shallow and is not a
-  replacement for a language parser or compiler.
+  regions, diagnostics, search results, analysis/search time, test duration,
+  and output bytes; search query and context are fixed-size bounded as well.
+  Step 4 adds only the `CODING_MAX_SEARCH_RESULTS` setting. Analysis/search
+  time checks are cooperative; a single synchronous read/parser/search pass
+  cannot be forcibly interrupted. The ECMAScript scanner is deliberately
+  shallow and is not a replacement for a language parser or compiler.
 
 ---
 
@@ -785,7 +794,7 @@ issue (do not post secrets or proof-of-concept exploit details publicly).
 | Persistent, redaction-aware audit log | PLANNED (Phase 12) |
 | Broader, separately reviewed computer workflows | NOT IMPLEMENTED (future; explicit named operations only) |
 | Bounded Phase 9 browser foundation (fixed tools, opt-in provider, bounded permissions/verification) | IMPLEMENTED |
-| Phase 10 Steps 1–3 coding models/provider contract/mock, bounded read-only runtime, and deterministic diagnostics; no real provider | IMPLEMENTED |
+| Phase 10 Steps 1–4 coding models/provider contract/mock, bounded read-only analysis/diagnostics, and literal code search; no real provider | IMPLEMENTED |
 | Coding source/path bounds through `Workspace`, hash-precondition proposals, metadata-only observations | IMPLEMENTED |
 | Coding write/apply, shell/process, arbitrary code, compiler, package install, test/build execution | NOT IMPLEMENTED (explicitly excluded) |
 | Unrestricted browser autonomy, host allowlist, and SSRF/DNS-rebinding defense | NOT IMPLEMENTED (documented limitation) |

@@ -1,8 +1,8 @@
-"""Phase 10 coding foundation: bounded data, read-only analysis, diagnostics.
+"""Phase 10 coding foundation: bounded data, analysis, diagnostics, and search.
 
-The local runtime reads validated workspace files and returns bounded facts;
-the diagnostics engine consumes only those source snapshots. Edit proposals
-and test plans remain data. This package adds no file writes, code execution,
+Local runtimes read validated workspace files and return bounded facts or
+literal search hits; source snippets remain untrusted data. Edit proposals and
+test plans remain data. This package adds no file writes, code execution,
 command runner, or real model provider. Resolve paths through ``Workspace``.
 """
 
@@ -38,6 +38,11 @@ from .models import (
     CodeLanguage,
     CodePatch,
     CodeRegion,
+    CodeSearchLimitReason,
+    CodeSearchMatch,
+    CodeSearchMode,
+    CodeSearchRequest,
+    CodeSearchResult,
     CodeSkipReason,
     CodeSymbol,
     CodeSymbolKind,
@@ -56,6 +61,7 @@ from .models import (
     TestCasePlan,
 )
 from .runtime import CodingAnalysisRuntime
+from .search import CodeSearchRuntime
 
 __all__ = [
     "AnalyzedCodeFile",
@@ -77,6 +83,12 @@ __all__ = [
     "CodeLanguage",
     "CodePatch",
     "CodeRegion",
+    "CodeSearchLimitReason",
+    "CodeSearchMatch",
+    "CodeSearchMode",
+    "CodeSearchRequest",
+    "CodeSearchResult",
+    "CodeSearchRuntime",
     "CodeSkipReason",
     "CodeSymbol",
     "CodeSymbolKind",

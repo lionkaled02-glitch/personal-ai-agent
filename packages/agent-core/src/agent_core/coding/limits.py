@@ -17,6 +17,7 @@ from .models import (
     MAX_CODING_PATCH_SIZE_BYTES,
     MAX_CODING_PROJECT_FILES,
     MAX_CODING_REGIONS,
+    MAX_CODING_SEARCH_RESULTS,
     MAX_CODING_SOURCE_CHARS,
     MAX_CODING_SYMBOLS,
     MAX_CODING_TEST_CASES,
@@ -27,6 +28,7 @@ from .models import (
     CodeEditResult,
     CodeFile,
     CodePatch,
+    CodeSearchResult,
     CodeTestPlanRequest,
     CodeTestPlanResult,
     CodingModel,
@@ -55,6 +57,12 @@ class CodingLimits(CodingModel):
     max_symbols: int = Field(default=200, ge=0, le=MAX_CODING_SYMBOLS, strict=True)
     max_regions: int = Field(default=100, ge=0, le=MAX_CODING_REGIONS, strict=True)
     max_diagnostics: int = Field(default=100, ge=0, le=MAX_CODING_DIAGNOSTICS, strict=True)
+    max_search_results: int = Field(
+        default=100,
+        ge=1,
+        le=MAX_CODING_SEARCH_RESULTS,
+        strict=True,
+    )
     max_analysis_time_s: float = Field(
         default=20.0,
         gt=0.0,
@@ -83,6 +91,7 @@ class CodingLimits(CodingModel):
             max_symbols=settings.coding_max_symbols,
             max_regions=settings.coding_max_regions,
             max_diagnostics=settings.coding_max_diagnostics,
+            max_search_results=settings.coding_max_search_results,
             max_analysis_time_s=settings.coding_max_analysis_time_s,
             max_test_duration_s=settings.coding_max_test_duration_s,
             max_output_bytes=settings.coding_max_output_bytes,
@@ -125,6 +134,11 @@ class CodingLimits(CodingModel):
         if result.elapsed_time_s > self.max_analysis_time_s:
             raise CodingLimitError()
         self.validate_observation(result.observation)
+        self._validate_output_size_bytes(len(result.model_dump_json().encode("utf-8")))
+
+    def validate_search_result(self, result: CodeSearchResult) -> None:
+        if len(result.matches) > self.max_search_results:
+            raise CodingLimitError()
         self._validate_output_size_bytes(len(result.model_dump_json().encode("utf-8")))
 
     def validate_patch(self, patch: CodePatch) -> None:
