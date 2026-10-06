@@ -19,7 +19,7 @@ def test_task_request_bounds() -> None:
 def test_api_list_bounds() -> None:
     with pytest.raises(HTTPException):
         api.list_tasks(0)
-    with pytest.raises(api.HTTPException):
+    with pytest.raises(HTTPException):
         api.list_tasks(501)
-    with pytest.raises(api.HTTPException):
+    with pytest.raises(HTTPException):
         api.get_events("missing", 0)
