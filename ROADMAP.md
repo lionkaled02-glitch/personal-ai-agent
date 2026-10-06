@@ -483,10 +483,12 @@ The user-facing shell and durable task management.
 
 | Item | Status |
 | --- | --- |
-| Task Manager: persistence, queue, multi-task scheduling | NOT IMPLEMENTED |
-| API layer (HTTP/WebSocket) streaming events to clients | NOT IMPLEMENTED |
-| User interface (CLI → desktop/web) | NOT IMPLEMENTED |
-| Drive `WAITING_FOR_USER` / `PAUSED` / resume (async approvals) | NOT IMPLEMENTED |
+| Durable SQLite task/event persistence and bounded task listing | IMPLEMENTED |
+| Background task queue with stable task IDs | IMPLEMENTED |
+| FastAPI HTTP task API and WebSocket event streaming | IMPLEMENTED |
+| Backend smoke tests and repository CI quality gates | IMPLEMENTED |
+| User interface (CLI → desktop/web) | PLANNED |
+| Drive `WAITING_FOR_USER` / `PAUSED` / resume (async approvals) | IN PROGRESS — approval events are persisted, but end-to-end resume control is not yet complete |
 
 ---
 
