@@ -4,12 +4,13 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from agent_core import Agent, Settings, Task
+from agent_core import Agent, Settings, Task, TaskState, build_gateway
 from .task_store import TaskStore
 
 settings = Settings.from_env()
@@ -33,7 +34,21 @@ def _run_task(task_id: str, request: TaskRequest) -> str:
     gateway = build_gateway(settings)
     agent = Agent.create_configured(settings=settings, gateway=gateway)
     agent.events.subscribe(store.add_event)
-    task = agent.run(request.request, input_channel=request.input_channel, task_id=task_id)  # type: ignore[arg-type]
+    try:
+        task = agent.run(
+            request.request,
+            input_channel=request.input_channel,  # type: ignore[arg-type]
+            task_id=task_id,
+        )
+    except Exception:
+        # Keep the durable shell truthful if a worker fails outside Agent.run's
+        # controlled error handling.
+        task = store.get_task(task_id)
+        if task is not None and not task.is_terminal():
+            task.error = "task execution failed"
+            task.transition(TaskState.FAILED, now=datetime.now(UTC))
+            store.save_task(task)
+        raise
     store.save_task(task)
     return task.id
 
@@ -47,7 +62,6 @@ def health() -> dict[str, str]:
 def create_task(request: TaskRequest) -> dict[str, str]:
     task_id = str(uuid.uuid4())
     # Persist a durable shell before handing work to the executor.
-    from datetime import UTC, datetime
     store.save_task(Task(id=task_id, request=request.request, created_at=datetime.now(UTC), updated_at=datetime.now(UTC)))
     future = executor.submit(_run_task, task_id, request)
     try:
