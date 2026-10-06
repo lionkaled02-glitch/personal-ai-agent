@@ -67,7 +67,9 @@ def _run_task(task_id: str, request: TaskRequest) -> str:
 
     # Each task receives a fresh in-process agent so event history is isolated.
     gateway = build_gateway(settings)
-    agent = Agent.create_configured(\n        settings=settings, gateway=gateway, approval=cast(ApprovalCallback, approval_callback)\n    )
+    agent = Agent.create_configured(
+        settings=settings, gateway=gateway, approval=cast(ApprovalCallback, approval_callback)
+    )
     agent.events.subscribe(store.add_event)
     try:
         completed_task = agent.run(
@@ -113,7 +115,9 @@ def create_task(request: TaskRequest) -> dict[str, str]:
 def list_tasks(limit: int = 50) -> list[dict[str, Any]]:
     if limit < 1 or limit > 500:
         raise HTTPException(status_code=400, detail="limit must be between 1 and 500")
-    return cast(\n        list[dict[str, Any]], [task.model_dump(mode="json") for task in store.list_tasks(limit)]\n    )
+    return cast(
+        list[dict[str, Any]], [task.model_dump(mode="json") for task in store.list_tasks(limit)]
+    )
 
 
 @app.get("/approvals")
