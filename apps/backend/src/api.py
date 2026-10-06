@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import uuid
+from pathlib import Path
 from datetime import UTC, datetime
 from typing import Any
 
@@ -120,4 +121,4 @@ async def event_stream(websocket: WebSocket, task_id: str) -> None:
 
 
 # The bundled UI is intentionally static and contains no credentials or privileged logic.
-app.mount("/static", StaticFiles(directory="apps/backend/src/static"), name="static")
+app.mount("/", StaticFiles(directory=Path(__file__).resolve().parent / "static", html=True), name="ui")
