@@ -11,7 +11,7 @@ from threading import Event, Lock
 from typing import Any
 
 from agent_core import Agent, Settings, Task, TaskState, build_gateway
-from agent_core.permissions import ApprovalRequest
+from agent_core.permissions import ApprovalCallback, ApprovalRequest
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
