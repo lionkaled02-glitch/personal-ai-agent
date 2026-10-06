@@ -29,6 +29,8 @@ def test_media_runtime_rejects_path_escape(tmp_path: Path) -> None:
 
 
 def test_media_runtime_enforces_output_limit(tmp_path: Path) -> None:
-    runtime = MediaRuntime(tmp_path / "generated", MockMediaGenerator(), MockMediaGenerator(), max_bytes=4)
+    runtime = MediaRuntime(
+        tmp_path / "generated", MockMediaGenerator(), MockMediaGenerator(), max_bytes=4
+    )
     with pytest.raises(ValueError, match="exceeds"):
         runtime.generate(MediaRequest(kind="video", prompt="x", filename="video.bin"))
