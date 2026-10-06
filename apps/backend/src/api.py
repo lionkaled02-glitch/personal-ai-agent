@@ -150,7 +150,7 @@ def get_task(task_id: str) -> dict[str, Any]:
     task = store.get_task(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="task not found")
-    return cast(dict[str, Any], task.model_dump(mode="json"))
+    return task.model_dump(mode="json")
 
 
 @app.get("/tasks/{task_id}/events")
@@ -159,7 +159,7 @@ def get_events(task_id: str, limit: int = 200) -> list[dict[str, Any]]:
         raise HTTPException(status_code=400, detail="limit must be between 1 and 500")
     if store.get_task(task_id) is None:
         raise HTTPException(status_code=404, detail="task not found")
-    return cast(list[dict[str, Any]], store.events(task_id, limit))
+    return store.events(task_id, limit)
 
 
 @app.websocket("/tasks/{task_id}/events/stream")
