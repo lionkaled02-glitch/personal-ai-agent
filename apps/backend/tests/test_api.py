@@ -1,6 +1,6 @@
 import api
-from fastapi import HTTPException
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 
 
