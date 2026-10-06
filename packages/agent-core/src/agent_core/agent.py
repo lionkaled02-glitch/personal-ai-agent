@@ -29,6 +29,7 @@ from .events import Clock, EventBus, EventType, bounded_text, utc_now
 from .executor import BasicVerifier, Executor, Verifier
 from .memory.limits import MemoryLimits
 from .memory.retrieval import LexicalMemoryRetriever
+from .memory.sqlite_store import SQLiteMemoryStore
 from .memory.store import InMemoryMemoryStore, MemoryStore
 from .memory_tools import register_memory_tools
 from .permissions import ApprovalCallback, PermissionManager
@@ -98,6 +99,7 @@ class Agent:
         clock: Clock | None = None,
         workspace_root: Path | None = None,
         browser_provider: BrowserProvider | None = None,
+        memory_store: MemoryStore | None = None,
     ) -> Agent:
         """A fully wired agent using only in-process fakes.
 
@@ -187,7 +189,9 @@ class Agent:
         register_workspace_tools(registry, workspace)
         store = KnowledgeStore(DocumentLimits.from_settings(resolved))
         register_document_tools(registry, workspace, store)
-        memory = InMemoryMemoryStore(MemoryLimits.from_settings(resolved), clock=clock)
+        memory = memory_store if memory_store is not None else SQLiteMemoryStore(
+            resolved.data_root / "memory.sqlite3", MemoryLimits.from_settings(resolved)
+        )
         register_memory_tools(registry, memory, clock=clock)
         permissions = PermissionManager(approval=approval)
         events = EventBus(clock=clock)
