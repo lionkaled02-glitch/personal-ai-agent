@@ -3,7 +3,6 @@ from pathlib import Path
 
 from agent_core.events import AgentEvent, EventType
 from agent_core.tasks import Task
-
 from src.task_store import TaskStore
 
 
