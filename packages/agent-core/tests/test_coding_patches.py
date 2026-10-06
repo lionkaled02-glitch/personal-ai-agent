@@ -15,6 +15,7 @@ from agent_core.coding import (
     CodingProject,
     PatchApplicationStatus,
 )
+from agent_core.permissions import ApprovalCallback
 
 
 def _setup(
