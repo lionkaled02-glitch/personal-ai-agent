@@ -41,6 +41,7 @@ from .models import (
     metadata_size_bytes,
 )
 from .retrieval import LexicalMemoryRetriever, MemoryRetriever
+from .sqlite_store import SQLiteMemoryStore
 from .store import InMemoryMemoryStore, MemoryStore
 
 __all__ = [
@@ -56,6 +57,7 @@ __all__ = [
     "MemoryLimits",
     "MemoryRetriever",
     "MemoryStore",
+    "SQLiteMemoryStore",
     "MemoryStoreError",
     "MemoryType",
     "SourceCategory",
