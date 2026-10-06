@@ -62,7 +62,9 @@ def test_denied_patch_does_not_touch_files(tmp_path: Path) -> None:
     target.write_text("value = 1\n", encoding="utf-8", newline="")
 
     with pytest.raises(CodingPermissionError):
-        CodingPatchRuntime(ws, permissions).apply(\n        project, _patch("app.py", "value = 1\\n", "value = 2\\n")\n    )
+        CodingPatchRuntime(ws, permissions).apply(
+            project, _patch("app.py", "value = 1\\n", "value = 2\\n")
+        )
 
     assert target.read_text(encoding="utf-8") == "value = 1\n"
 
