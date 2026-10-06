@@ -213,7 +213,7 @@ decisions.
 | Security: injection in memory/document content never triggers tools, permissions, or approval bypass; no auto-persistence of conversation; no new subprocess/shell/network/DB capability (static + behavioral tests) | IMPLEMENTED |
 | Configuration: `MEMORY_MAX_ITEMS`, `MEMORY_MAX_CONTENT_CHARS`, `MEMORY_MAX_METADATA_BYTES`, `MEMORY_MAX_RECALL_RESULTS`, `MEMORY_MAX_CONTEXT_CHARS`, `MEMORY_MAX_CONTEXT_ITEMS`, `MEMORY_SHORT_TERM_TTL_S`, `MEMORY_WORKING_TTL_S` (defaults in `.env.example`) | IMPLEMENTED |
 | Vector store + embeddings (via `ModelProvider.embed`) as `MemoryRetriever`/`RetrievalIndex` implementations | NOT IMPLEMENTED (future — the protocols are the seam) |
-| Persistent, durable memory store (survives process restarts) as a `MemoryStore` implementation | NOT IMPLEMENTED (future) |
+| Persistent, durable SQLite memory store (survives process restarts) as a `MemoryStore` implementation | IMPLEMENTED — bounded local SQLite persistence |
 
 **Acceptance (met):** memory CRUD/list/recall are deterministic (stable
 ids, `(created_at, memory_id)` ordering, id tie-breaks) and covered by
@@ -234,8 +234,9 @@ Phase 0–4 suite still passes (regression).
 - Retrieval is lexical (token-based) by design — no semantic matching for
   either documents (Phase 4) or memory (Phase 5); ranking quality is
   commensurate. Embeddings/vector backends are a future phase.
-- The `InMemoryMemoryStore` is in-process: memories do not survive a
-  process restart (durability is a future `MemoryStore` implementation).
+- `InMemoryMemoryStore` remains in-process; durable local persistence is provided
+  separately by `SQLiteMemoryStore`, which uses the same `MemoryStore` seam and
+  persists memory lifecycle changes across process restarts.
 - The secret-content guard is a heuristic (conservative patterns), not a
   guarantee — credentials must never be stored in memory at all.
 - Naive datetimes are assumed UTC (documented contract); expiry is
