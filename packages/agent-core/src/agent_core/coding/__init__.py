@@ -55,6 +55,7 @@ from .models import (
     SkippedCodeFile,
     TestCasePlan,
 )
+from .patches import CodingPatchRuntime, PatchApplicationResult, PatchApplicationStatus, PatchFileResult
 from .runtime import CodingAnalysisRuntime
 
 __all__ = [
@@ -84,6 +85,7 @@ __all__ = [
     "CodeTestPlanResult",
     "CodeTestPlanStatus",
     "CodingAnalysisRuntime",
+    "CodingPatchRuntime",
     "CodingError",
     "CodingLimitError",
     "CodingLimits",
@@ -93,6 +95,9 @@ __all__ = [
     "CodingProject",
     "CodingProvider",
     "CodingProviderError",
+    "PatchApplicationResult",
+    "PatchApplicationStatus",
+    "PatchFileResult",
     "CodingTimeoutError",
     "CodingUnsupportedOperationError",
     "CodingValidationError",
