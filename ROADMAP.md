@@ -469,11 +469,16 @@ The Phase 6 adapter never launches processes and exposes no generic arbitrary-ac
 
 ## Phase 11 — Media generation
 
+Media generation is intentionally provider-neutral. Generated artifacts are
+stored under the configured data boundary and are never treated as trusted
+instructions.
+
 | Item | Status |
 | --- | --- |
-| Image generation provider | NOT IMPLEMENTED |
-| Video generation provider | NOT IMPLEMENTED |
-| Outputs under `data/generated` | NOT IMPLEMENTED |
+| Image generation provider | IMPLEMENTED — provider protocol, bounded request/result models, deterministic mock, and artifact writer |
+| Video generation provider | IMPLEMENTED — provider protocol, bounded request/result models, deterministic mock, and artifact writer |
+| Outputs under `data/generated` | IMPLEMENTED |
+| Credential/network access | OPTIONAL and disabled by default; no secret is stored in task history |
 
 ---
 
