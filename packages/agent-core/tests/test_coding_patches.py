@@ -67,7 +67,7 @@ def test_denied_patch_does_not_touch_files(tmp_path: Path) -> None:
 
     with pytest.raises(CodingPermissionError):
         CodingPatchRuntime(ws, permissions).apply(
-            project, _patch("app.py", "value = 1\n", "value = 2\n")
+            project, _patch("project/app.py", "value = 1\n", "value = 2\n")
         )
 
     assert target.read_text(encoding="utf-8") == "value = 1\n"
@@ -79,7 +79,7 @@ def test_stale_patch_is_rejected_before_any_write(tmp_path: Path) -> None:
     target.write_text("value = 9\n", encoding="utf-8", newline="")
 
     result = CodingPatchRuntime(ws, permissions).apply(
-        project, _patch("app.py", "value = 1\n", "value = 2\n")
+        project, _patch("project/app.py", "value = 1\n", "value = 2\n")
     )
 
     assert result.status == PatchApplicationStatus.CONFLICT
@@ -121,7 +121,7 @@ def test_multi_file_preflight_prevents_partial_patch(tmp_path: Path) -> None:
 
 def test_patch_target_cannot_escape_project(tmp_path: Path) -> None:
     ws, project, permissions, _ = _setup(tmp_path, approval=lambda _: True)
-    patch = _patch("../outside.py", "x\n", "y\n")
+    patch = _patch("project/../outside.py", "x\n", "y\n")
 
     with pytest.raises(CodingWorkspaceError):
         CodingPatchRuntime(ws, permissions).apply(project, patch)
