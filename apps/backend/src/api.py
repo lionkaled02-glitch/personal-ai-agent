@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from agent_core import Agent, Settings, build_gateway
+from agent_core import Agent, Settings, Task
 from .task_store import TaskStore
 
 settings = Settings.from_env()
@@ -46,8 +46,10 @@ def health() -> dict[str, str]:
 @app.post("/tasks", status_code=202)
 def create_task(request: TaskRequest) -> dict[str, str]:
     task_id = str(uuid.uuid4())
-    # Persist a durable CREATED shell before handing work to the executor.
-    # The worker replaces it with the authoritative Task snapshot.
+    # Persist a durable shell before handing work to the executor.
+    now = settings
+    from datetime import UTC, datetime
+    store.save_task(Task(id=task_id, request=request.request, created_at=datetime.now(UTC), updated_at=datetime.now(UTC)))
     future = executor.submit(_run_task, task_id, request)
     try:
         task_id = future.result(timeout=0.05)
