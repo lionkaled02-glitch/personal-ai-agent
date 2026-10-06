@@ -1,4 +1,5 @@
 """Durable SQLite implementation of the provider-neutral MemoryStore."""
+
 from __future__ import annotations
 
 import sqlite3
