@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_core.media import MediaRuntime, MediaRequest, MockMediaGenerator
+from agent_core.media import MediaRequest, MediaRuntime, MockMediaGenerator
 
 
 def test_media_runtime_writes_bounded_artifact(tmp_path: Path) -> None:
