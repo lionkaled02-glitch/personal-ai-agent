@@ -1,6 +1,7 @@
 import pytest
 from pydantic import ValidationError
-from src import api
+
+import api
 
 
 def test_health() -> None:
