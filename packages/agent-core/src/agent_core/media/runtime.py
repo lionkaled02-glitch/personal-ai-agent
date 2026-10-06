@@ -25,7 +25,12 @@ class MediaRuntime:
 
     def generate(self, request: MediaRequest) -> MediaArtifact:
         raw = Path(request.filename)
-        if raw.is_absolute() or ".." in raw.parts or "/" in request.filename or "\\" in request.filename:
+        if (
+            raw.is_absolute()
+            or ".." in raw.parts
+            or "/" in request.filename
+            or "\\" in request.filename
+        ):
             raise ValueError("output path escapes generated-artifact boundary")
         safe = re.sub(r"[^A-Za-z0-9._-]", "_", request.filename).strip(".")
         safe = safe or "generated.bin"
