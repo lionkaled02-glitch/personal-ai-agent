@@ -23,7 +23,7 @@ from ..workspace import Workspace, WorkspaceError
 from ..workspace_tools._common import atomic_write_bytes
 from .errors import CodingPermissionError, CodingWorkspaceError
 from .limits import CodingLimits
-from .models import CodeChange, CodePatch
+from .models import CodeChange, CodePatch, CodingProject
 
 PATCH_OPERATION = "coding_apply_patch"
 
@@ -80,7 +80,7 @@ class CodingPatchRuntime:
 
     def apply(
         self,
-        project: object,
+        project: CodingProject,
         patch: CodePatch,
         *,
         task_id: str = "coding",
