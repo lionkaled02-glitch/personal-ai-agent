@@ -14,6 +14,7 @@ from agent_core import Agent, Settings, Task, TaskState, build_gateway
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+
 from .task_store import TaskStore
 
 settings = Settings.from_env()
