@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_core.memory.limits import MemoryLimits
-from agent_core.memory.models import Memory, MemoryType, SourceCategory
+from agent_core.memory.models import Memory, MemoryType
 from agent_core.memory.store import InMemoryMemoryStore
 
 
