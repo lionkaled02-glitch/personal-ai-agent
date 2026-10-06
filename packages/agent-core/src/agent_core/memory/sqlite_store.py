@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 import threading
 from pathlib import Path
+from datetime import datetime
 from typing import Any
 
 from agent_core.memory.limits import MemoryLimits
@@ -53,7 +54,9 @@ class SQLiteMemoryStore(InMemoryMemoryStore):
         self._persist(memory)
         return memory
 
-    def forget(self, memory_id: str, *, hard: bool = False, now=None) -> Memory:
+    def forget(
+        self, memory_id: str, *, hard: bool = False, now: datetime | None = None
+    ) -> Memory:
         memory = super().forget(memory_id, hard=hard, now=now)
         with self._db_lock, self._connect() as db:
             if hard:
@@ -65,7 +68,7 @@ class SQLiteMemoryStore(InMemoryMemoryStore):
                 )
         return memory
 
-    def purge_expired(self, now=None) -> int:
+    def purge_expired(self, now: datetime | None = None) -> int:
         removed_ids = [
             memory.memory_id
             for memory in self._items.values()
