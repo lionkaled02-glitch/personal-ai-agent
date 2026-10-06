@@ -47,7 +47,6 @@ def health() -> dict[str, str]:
 def create_task(request: TaskRequest) -> dict[str, str]:
     task_id = str(uuid.uuid4())
     # Persist a durable shell before handing work to the executor.
-    now = settings
     from datetime import UTC, datetime
     store.save_task(Task(id=task_id, request=request.request, created_at=datetime.now(UTC), updated_at=datetime.now(UTC)))
     future = executor.submit(_run_task, task_id, request)
