@@ -42,6 +42,19 @@ class TaskStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_tasks_updated ON tasks(updated_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id, timestamp);
+                CREATE TABLE IF NOT EXISTS approvals (
+                    id TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL,
+                    step_id TEXT NOT NULL,
+                    tool_name TEXT NOT NULL,
+                    permission_level INTEGER NOT NULL,
+                    reason TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    decided_at TEXT,
+                    UNIQUE(task_id, step_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_approvals_task ON approvals(task_id, created_at DESC);
                 """
             )
 
@@ -71,6 +84,43 @@ class TaskStore:
                 (event.event_id, event.task_id, event.timestamp.isoformat(),
                  event.type.value, event.step_id, json.dumps(event.data, ensure_ascii=False)),
             )
+
+    def create_approval(self, approval_id: str, task_id: str, step_id: str, tool_name: str,
+                        permission_level: int, reason: str, created_at: str) -> None:
+        with self._lock, self._connect() as db:
+            db.execute(
+                """INSERT OR IGNORE INTO approvals
+                   (id,task_id,step_id,tool_name,permission_level,reason,status,created_at)
+                   VALUES(?,?,?,?,?,?,?,?)""",
+                (approval_id, task_id, step_id, tool_name, permission_level, reason, "PENDING", created_at),
+            )
+
+    def decide_approval(self, approval_id: str, approved: bool, decided_at: str) -> bool:
+        status = "APPROVED" if approved else "DENIED"
+        with self._lock, self._connect() as db:
+            cur = db.execute(
+                """UPDATE approvals SET status=?, decided_at=?
+                   WHERE id=? AND status='PENDING'""",
+                (status, decided_at, approval_id),
+            )
+            return cur.rowcount == 1
+
+    def get_approval(self, approval_id: str) -> dict[str, Any] | None:
+        with self._lock, self._connect() as db:
+            row = db.execute("SELECT * FROM approvals WHERE id=?", (approval_id,)).fetchone()
+        return dict(row) if row else None
+
+    def list_approvals(self, task_id: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 500))
+        query = "SELECT * FROM approvals"
+        args: tuple[Any, ...] = ()
+        if task_id:
+            query += " WHERE task_id=?"
+            args = (task_id,)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        args += (limit,)
+        with self._lock, self._connect() as db:
+            return [dict(row) for row in db.execute(query, args).fetchall()]
 
     def get_task(self, task_id: str) -> Task | None:
         with self._lock, self._connect() as db:
