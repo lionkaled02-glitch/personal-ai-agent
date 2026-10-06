@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from agent_core import Agent, Settings, Task, TaskState, build_gateway
@@ -116,3 +117,7 @@ async def event_stream(websocket: WebSocket, task_id: str) -> None:
             await asyncio.sleep(0.25)
     except WebSocketDisconnect:
         return
+
+
+# The bundled UI is intentionally static and contains no credentials or privileged logic.
+app.mount("/static", StaticFiles(directory="apps/backend/src/static"), name="static")
