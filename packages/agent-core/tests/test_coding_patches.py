@@ -119,5 +119,5 @@ def test_patch_target_cannot_escape_project(tmp_path: Path) -> None:
     ws, project, permissions, _ = _setup(tmp_path, approval=lambda _: True)
     patch = _patch("../outside.py", "x\n", "y\n")
 
-    with pytest.raises(Exception):
+    with pytest.raises((ValueError, OSError)):
         CodingPatchRuntime(ws, permissions).apply(project, patch)
