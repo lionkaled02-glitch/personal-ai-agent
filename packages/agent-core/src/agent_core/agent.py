@@ -189,8 +189,12 @@ class Agent:
         register_workspace_tools(registry, workspace)
         store = KnowledgeStore(DocumentLimits.from_settings(resolved))
         register_document_tools(registry, workspace, store)
-        memory = memory_store if memory_store is not None else SQLiteMemoryStore(
-            resolved.data_root / "memory.sqlite3", MemoryLimits.from_settings(resolved)
+        memory = (
+            memory_store
+            if memory_store is not None
+            else SQLiteMemoryStore(
+                resolved.data_root / "memory.sqlite3", MemoryLimits.from_settings(resolved)
+            )
         )
         register_memory_tools(registry, memory, clock=clock)
         permissions = PermissionManager(approval=approval)
