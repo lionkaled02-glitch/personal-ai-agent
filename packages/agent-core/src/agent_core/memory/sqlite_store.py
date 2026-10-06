@@ -54,9 +54,7 @@ class SQLiteMemoryStore(InMemoryMemoryStore):
         self._persist(memory)
         return memory
 
-    def forget(
-        self, memory_id: str, *, hard: bool = False, now: datetime | None = None
-    ) -> Memory:
+    def forget(self, memory_id: str, *, hard: bool = False, now: datetime | None = None) -> Memory:
         memory = super().forget(memory_id, hard=hard, now=now)
         with self._db_lock, self._connect() as db:
             if hard:
