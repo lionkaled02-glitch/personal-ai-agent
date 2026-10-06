@@ -5,6 +5,7 @@ separate mutation step: every target is resolved through the existing
 Workspace boundary, every live file is checked against the patch's original
 SHA-256 and byte size, and no file is changed until all preconditions pass.
 """
+
 from __future__ import annotations
 
 import hashlib
