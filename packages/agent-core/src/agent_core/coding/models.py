@@ -115,7 +115,7 @@ class CodingProject(CodingModel):
     @staticmethod
     def _resolve_project_path(workspace: Workspace, root: Path, path: str) -> Path:
         try:
-            resolved = workspace.resolve(path)
+            resolved = workspace.resolve(f"{root.relative_to(workspace.root) / path}")
         except WorkspaceError:
             raise CodingWorkspaceError() from None
         if resolved == root or root not in resolved.parents:
