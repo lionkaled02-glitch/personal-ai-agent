@@ -1,0 +1,19 @@
+[project]
+name = "personal-ai-agent-backend"
+version = "1.0.0"
+description = "HTTP/WebSocket application for Personal AI Agent"
+requires-python = ">=3.11"
+dependencies = [
+  "agent-core",
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.30,<1",
+]
+
+[project.optional-dependencies]
+openai = ["agent-core[openai]"]
+docs = ["agent-core[docs]"]
+computer-windows = ["agent-core[computer-windows]"]
+browser = ["agent-core[browser-playwright]"]
+
+[tool.uv.sources]
+agent-core = { path = "../../packages/agent-core", editable = true }
