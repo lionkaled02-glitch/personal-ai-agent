@@ -260,7 +260,7 @@ from .errors import (
 )
 from .events import AgentEvent, EventBus, EventType, bounded_text, bounded_value, utc_now
 from .executor import BasicVerifier, Executor, Verifier, VerifyResult
-from .memory import (
+from .media import (
     InMemoryMemoryStore,
     LexicalMemoryRetriever,
     Memory,
@@ -582,6 +582,12 @@ __all__ = [
     "MockModelProvider",
     "MockSTTProvider",
     "MockTTSProvider",
+    "MediaArtifact",
+    "MediaRequest",
+    "ImageGenerator",
+    "VideoGenerator",
+    "MockMediaGenerator",
+    "MediaRuntime",
     "ModelGateway",
     "ModelPlanner",
     "ModelProvider",
