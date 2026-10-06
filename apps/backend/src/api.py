@@ -8,15 +8,15 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import Event, Lock
-from typing import Any
+from typing import Any, cast
 
 from agent_core import Agent, Settings, Task, TaskState, build_gateway
-from agent_core.permissions import ApprovalRequest
+from agent_core.permissions import ApprovalCallback, ApprovalRequest
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .task_store import TaskStore
+from task_store import TaskStore
 
 settings = Settings.from_env()
 store = TaskStore(settings.data_root / "tasks.sqlite3")
@@ -67,7 +67,7 @@ def _run_task(task_id: str, request: TaskRequest) -> str:
 
     # Each task receives a fresh in-process agent so event history is isolated.
     gateway = build_gateway(settings)
-    agent = Agent.create_configured(settings=settings, gateway=gateway, approval=approval_callback)
+    agent = Agent.create_configured(settings=settings, gateway=gateway, approval=cast(ApprovalCallback, approval_callback))
     agent.events.subscribe(store.add_event)
     try:
         completed_task = agent.run(
@@ -113,7 +113,7 @@ def create_task(request: TaskRequest) -> dict[str, str]:
 def list_tasks(limit: int = 50) -> list[dict[str, Any]]:
     if limit < 1 or limit > 500:
         raise HTTPException(status_code=400, detail="limit must be between 1 and 500")
-    return [task.model_dump(mode="json") for task in store.list_tasks(limit)]
+    return cast(list[dict[str, Any]], [task.model_dump(mode="json") for task in store.list_tasks(limit)])
 
 
 @app.get("/approvals")
@@ -147,7 +147,7 @@ def get_task(task_id: str) -> dict[str, Any]:
     task = store.get_task(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="task not found")
-    return task.model_dump(mode="json")
+    return cast(dict[str, Any], task.model_dump(mode="json"))
 
 
 @app.get("/tasks/{task_id}/events")
@@ -156,7 +156,7 @@ def get_events(task_id: str, limit: int = 200) -> list[dict[str, Any]]:
         raise HTTPException(status_code=400, detail="limit must be between 1 and 500")
     if store.get_task(task_id) is None:
         raise HTTPException(status_code=404, detail="task not found")
-    return store.events(task_id, limit)
+    return cast(list[dict[str, Any]], store.events(task_id, limit))
 
 
 @app.websocket("/tasks/{task_id}/events/stream")
