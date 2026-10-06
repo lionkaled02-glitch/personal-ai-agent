@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from agent_core import PermissionManager, Workspace
+from agent_core.permissions import ApprovalCallback
 from agent_core.coding import (
     CodeChange,
     CodePatch,
