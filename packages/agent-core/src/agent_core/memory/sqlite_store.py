@@ -31,7 +31,7 @@ class SQLiteMemoryStore(InMemoryMemoryStore):
                 "CREATE TABLE IF NOT EXISTS memories "
                 "(memory_id TEXT PRIMARY KEY, payload TEXT NOT NULL)"
             )
-            for row in db.execute("SELECT payload FROM memories"):
+            for row in db.execute("SELECT memory_id, payload FROM memories"):
                 self._items[row[0]] = Memory.model_validate_json(row[1])
 
     def _connect(self) -> sqlite3.Connection:
