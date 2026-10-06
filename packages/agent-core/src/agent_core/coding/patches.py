@@ -19,8 +19,8 @@ from ..permissions import (
     PermissionManager,
     _active_permission_authorization,
 )
-from ..workspace_tools._common import atomic_write_bytes
 from ..workspace import Workspace, WorkspaceError
+from ..workspace_tools._common import atomic_write_bytes
 from .errors import CodingPermissionError, CodingWorkspaceError
 from .limits import CodingLimits
 from .models import CodePatch
