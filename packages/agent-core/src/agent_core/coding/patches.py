@@ -23,7 +23,7 @@ from ..workspace import Workspace, WorkspaceError
 from ..workspace_tools._common import atomic_write_bytes
 from .errors import CodingPermissionError, CodingWorkspaceError
 from .limits import CodingLimits
-from .models import CodePatch
+from .models import CodeChange, CodePatch
 
 PATCH_OPERATION = "coding_apply_patch"
 
@@ -80,7 +80,7 @@ class CodingPatchRuntime:
 
     def apply(
         self,
-        project,
+        project: object,
         patch: CodePatch,
         *,
         task_id: str = "coding",
@@ -105,7 +105,7 @@ class CodingPatchRuntime:
 
         # Preflight every target before mutating any file. This prevents a
         # stale second file from leaving the patch half-applied.
-        preflight: list[tuple[object, Path, str, int]] = []
+        preflight: list[tuple[CodeChange, Path, str, int]] = []
         results: list[PatchFileResult] = []
         for change, rel in zip(patch.changes, targets, strict=True):
             resolved = self._workspace.resolve(rel)
