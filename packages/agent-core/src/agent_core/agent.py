@@ -257,6 +257,7 @@ class Agent:
         request: str,
         *,
         input_channel: Literal["text", "voice"] = "text",
+        task_id: str | None = None,
     ) -> Task:
         """Run one user request through the canonical agent task flow.
 
@@ -269,6 +270,8 @@ class Agent:
             raise ValueError("unsupported input channel")
         now = self._clock()
         task = Task.create(request, now=now)
+        if task_id is not None:
+            task.id = task_id
         created_data = (
             {"input_channel": "voice", "request_chars": len(request)}
             if input_channel == "voice"
