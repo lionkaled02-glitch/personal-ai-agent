@@ -91,16 +91,8 @@ def create_task(request: TaskRequest) -> dict[str, str]:
     task_id = str(uuid.uuid4())
     # Persist a durable shell before handing work to the executor.
     store.save_task(Task(id=task_id, request=request.request, created_at=datetime.now(UTC), updated_at=datetime.now(UTC)))
-    future = executor.submit(_run_task, task_id, request)
-    try:
-        task_id = future.result(timeout=0.05)
-    except TimeoutError:
-        # The task id is created inside Agent.run, so the asynchronous API
-        # returns a job acknowledgement when it is still starting.
-        return {"status": "accepted", "task_id": task_id}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail="task execution failed") from exc
-    return {"status": "completed", "task_id": task_id}
+    executor.submit(_run_task, task_id, request)
+    return {"status": "accepted", "task_id": task_id}
 
 
 @app.get("/tasks")
