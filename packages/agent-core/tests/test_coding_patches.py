@@ -17,7 +17,7 @@ from agent_core.coding import (
 )
 
 
-def _setup(tmp_path: Path, approval=None):
+def _setup(tmp_path: Path, approval: object = None) -> tuple[Workspace, CodingProject, PermissionManager, Path]:
     root = tmp_path / "workspace"
     root.mkdir()
     project_root = root / "project"
