@@ -16,6 +16,7 @@ select = ["E", "W", "F", "I", "UP", "B", "SIM", "C4", "RUF"]
 ignore = ["RUF012"]
 
 [tool.mypy]
+explicit_package_bases = true
 python_version = "3.11"
 strict = true
 # Resolve agent_core from source so type checking does not depend on the
