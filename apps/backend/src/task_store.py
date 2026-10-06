@@ -55,7 +55,8 @@ class TaskStore:
                     decided_at TEXT,
                     UNIQUE(task_id, step_id)
                 );
-                CREATE INDEX IF NOT EXISTS idx_approvals_task ON approvals(task_id, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_approvals_task
+                    ON approvals(task_id, created_at DESC);
                 """
             )
 
