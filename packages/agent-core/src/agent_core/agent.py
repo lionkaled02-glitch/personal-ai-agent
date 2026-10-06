@@ -99,7 +99,6 @@ class Agent:
         clock: Clock | None = None,
         workspace_root: Path | None = None,
         browser_provider: BrowserProvider | None = None,
-        memory_store: MemoryStore | None = None,
     ) -> Agent:
         """A fully wired agent using only in-process fakes.
 
@@ -158,6 +157,7 @@ class Agent:
         gateway: ModelGateway | None = None,
         computer_provider: ComputerProvider | None = None,
         browser_provider: BrowserProvider | None = None,
+        memory_store: MemoryStore | None = None,
     ) -> Agent:
         """An agent wired from configuration (Phase 1).
 
