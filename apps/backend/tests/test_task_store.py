@@ -50,4 +50,6 @@ def test_approval_round_trip_and_single_decision(tmp_path: Path) -> None:
     assert record["status"] == "PENDING"
     assert store.decide_approval("ap-1", True, now) is True
     assert store.decide_approval("ap-1", False, now) is False
-    record = store.get_approval("ap-1")\n    assert record is not None\n    assert record["status"] == "APPROVED"
+    record = store.get_approval("ap-1")
+    assert record is not None
+    assert record["status"] == "APPROVED"
