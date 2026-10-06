@@ -55,7 +55,12 @@ from .models import (
     SkippedCodeFile,
     TestCasePlan,
 )
-from .patches import CodingPatchRuntime, PatchApplicationResult, PatchApplicationStatus, PatchFileResult
+from .patches import (
+    CodingPatchRuntime,
+    PatchApplicationResult,
+    PatchApplicationStatus,
+    PatchFileResult,
+)
 from .runtime import CodingAnalysisRuntime
 
 __all__ = [
