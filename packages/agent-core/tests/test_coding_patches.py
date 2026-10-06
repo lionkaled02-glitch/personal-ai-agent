@@ -74,7 +74,9 @@ def test_stale_patch_is_rejected_before_any_write(tmp_path: Path) -> None:
     target = root / "app.py"
     target.write_text("value = 9\n", encoding="utf-8", newline="")
 
-    result = CodingPatchRuntime(ws, permissions).apply(project, _patch("app.py", "value = 1\n", "value = 2\n"))
+    result = CodingPatchRuntime(ws, permissions).apply(
+        project, _patch("app.py", "value = 1\\n", "value = 2\\n")
+    )
 
     assert result.status == PatchApplicationStatus.CONFLICT
     assert result.files[0].error_code == "source_changed"
