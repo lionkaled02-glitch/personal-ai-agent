@@ -10,4 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 FIXED_NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
-DEMO_PLAN_JSON = '{"steps": [{"tool_name": "demo_tool", "description": "Run the demo tool", "input": {"message": "hi from test"}}]}'
+DEMO_PLAN_JSON = (
+    '{"steps": [{"tool_name": "demo_tool", "description": "Run the demo tool", '
+    '"input": {"message": "hi from test"}}]}'
+)
