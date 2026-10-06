@@ -22,6 +22,10 @@ def test_media_runtime_rejects_path_escape(tmp_path: Path) -> None:
     runtime = MediaRuntime(tmp_path / "generated", MockMediaGenerator(), MockMediaGenerator())
     with pytest.raises(ValueError, match="escapes"):
         runtime.generate(MediaRequest(kind="image", prompt="x", filename="../escape.bin"))
+    with pytest.raises(ValueError, match="escapes"):
+        runtime.generate(MediaRequest(kind="image", prompt="x", filename="/tmp/escape.bin"))
+    with pytest.raises(ValueError, match="escapes"):
+        runtime.generate(MediaRequest(kind="image", prompt="x", filename=r"nested\\escape.bin"))
 
 
 def test_media_runtime_enforces_output_limit(tmp_path: Path) -> None:
