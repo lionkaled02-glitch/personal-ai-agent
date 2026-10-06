@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 from agent_core.memory import MemoryType, SourceCategory, SQLiteMemoryStore
