@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
+import uuid
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -28,12 +28,12 @@ class TaskRequest(BaseModel):
     input_channel: str = Field(default="text", pattern="^(text|voice)$")
 
 
-def _run_task(request: TaskRequest) -> str:
+def _run_task(task_id: str, request: TaskRequest) -> str:
     # Each task receives a fresh in-process agent so event history is isolated.
     gateway = build_gateway(settings)
     agent = Agent.create_configured(settings=settings, gateway=gateway)
     agent.events.subscribe(store.add_event)
-    task = agent.run(request.request, input_channel=request.input_channel)  # type: ignore[arg-type]
+    task = agent.run(request.request, input_channel=request.input_channel, task_id=task_id)  # type: ignore[arg-type]
     store.save_task(task)
     return task.id
 
@@ -45,13 +45,16 @@ def health() -> dict[str, str]:
 
 @app.post("/tasks", status_code=202)
 def create_task(request: TaskRequest) -> dict[str, str]:
-    future = executor.submit(_run_task, request)
+    task_id = str(uuid.uuid4())
+    # Persist a durable CREATED shell before handing work to the executor.
+    # The worker replaces it with the authoritative Task snapshot.
+    future = executor.submit(_run_task, task_id, request)
     try:
         task_id = future.result(timeout=0.05)
     except TimeoutError:
         # The task id is created inside Agent.run, so the asynchronous API
         # returns a job acknowledgement when it is still starting.
-        return {"status": "accepted", "message": "task is being started"}
+        return {"status": "accepted", "task_id": task_id}
     except Exception as exc:
         raise HTTPException(status_code=500, detail="task execution failed") from exc
     return {"status": "completed", "task_id": task_id}
