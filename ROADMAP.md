@@ -425,7 +425,9 @@ mock, analyzer, and diagnostics engine make no network requests.
 | Read-only `CodingAnalysisRuntime`; bounded discovery, UTF-8 snapshots, Python AST, shallow JS/TS scan, metadata-only formats | IMPLEMENTED |
 | Explicit analyzed/skipped file metadata, truncation reasons, and file/entry/output bounds | IMPLEMENTED |
 | `CodeDiagnosticsEngine`; bounded Python syntax, JavaScript/TypeScript delimiter, and shared style diagnostics | IMPLEMENTED |
-| Coding tools, source writes, patch application, test/build execution | NOT IMPLEMENTED (outside Steps 1–3) |
+| Coding analysis tools and source observation | IMPLEMENTED — bounded, workspace-scoped |
+| Source patch application | IMPLEMENTED — separate MEDIUM permission-gated, hash/size-checked, all-or-nothing preflight |
+| Test/build execution | NOT IMPLEMENTED — deliberately excluded from host runtime |
 | Shell/process/command use, arbitrary execution, compilers, package installation, real model providers | NOT IMPLEMENTED (explicitly excluded) |
 
 **Acceptance:** proposed replacements remain structured data and are checked
@@ -460,7 +462,7 @@ is not permission to add generic control.
 | Manual Windows compatibility/accessibility validation matrix | PLANNED |
 | Additional narrowly scoped, named workflows with risk review and deterministic postconditions | NOT IMPLEMENTED |
 | Any destructive or externally consequential computer operation (HIGH + explicit approval) | NOT IMPLEMENTED |
-| Persistent, redaction-aware audit trail (Phase 12 task/event persistence) | NOT IMPLEMENTED |
+| Persistent, redaction-aware task/event trail (Phase 12) | IMPLEMENTED — bounded operational event persistence |
 | Remote desktop/network control, shell/PowerShell, arbitrary code/actions | NOT IMPLEMENTED (excluded by current safety scope) |
 
 The Phase 6 adapter never launches processes and exposes no generic arbitrary-action tool.
@@ -492,7 +494,7 @@ The user-facing shell and durable task management.
 | Background task queue with stable task IDs | IMPLEMENTED |
 | FastAPI HTTP task API and WebSocket event streaming | IMPLEMENTED |
 | Backend smoke tests and repository CI quality gates | IMPLEMENTED |
-| User interface (CLI → desktop/web) | PLANNED |
+| User interface (bundled web UI) | IMPLEMENTED — static task submission, task state/events, and approval controls |
 | Drive `WAITING_FOR_USER` / `PAUSED` / resume (async approvals) | IMPLEMENTED — durable approval records, HTTP approve/deny endpoints, bounded waiter, state transitions, and wake-up are wired |
 
 ---
