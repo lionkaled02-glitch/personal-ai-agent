@@ -10,6 +10,8 @@ from pathlib import Path
 from threading import Event, Lock
 from typing import Any
 
+from agent_core.permissions import ApprovalRequest
+
 from agent_core import Agent, Settings, Task, TaskState, build_gateway
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
@@ -36,7 +38,7 @@ class TaskRequest(BaseModel):
 
 
 def _run_task(task_id: str, request: TaskRequest) -> str:
-    def approval_callback(approval: Any) -> bool:
+    def approval_callback(approval: ApprovalRequest) -> bool:
         approval_id = str(uuid.uuid4())
         waiter = Event()
         with approval_lock:
@@ -69,7 +71,7 @@ def _run_task(task_id: str, request: TaskRequest) -> str:
     agent = Agent.create_configured(settings=settings, gateway=gateway, approval=approval_callback)
     agent.events.subscribe(store.add_event)
     try:
-        task = agent.run(
+        completed_task = agent.run(
             request.request,
             input_channel=request.input_channel,  # type: ignore[arg-type]
             task_id=task_id,
@@ -83,8 +85,8 @@ def _run_task(task_id: str, request: TaskRequest) -> str:
             task.transition(TaskState.FAILED, now=datetime.now(UTC))
             store.save_task(task)
         raise
-    store.save_task(task)
-    return task.id
+    store.save_task(completed_task)
+    return completed_task.id
 
 
 @app.get("/health")
