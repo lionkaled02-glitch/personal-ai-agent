@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from agent_core import Agent, Settings, Task, TaskState, build_gateway
+from agent_core import Agent, EventType, Settings, Task, TaskState, build_gateway
 from .task_store import TaskStore
 
 settings = Settings.from_env()
@@ -51,7 +51,7 @@ def _run_task(task_id: str, request: TaskRequest) -> str:
         agent_events = agent.events if "agent" in locals() else None
         if agent_events is not None:
             agent_events.emit(
-                __import__("agent_core").EventType.APPROVAL_REQUIRED,
+                EventType.APPROVAL_REQUIRED,
                 task_id=task_id, step_id=approval.step_id,
                 data={"approval_id": approval_id, "tool_name": approval.tool_name,
                       "permission_level": approval.permission_level.name},
