@@ -53,7 +53,7 @@ def test_patch_requires_approval_and_applies_after_approval(tmp_path: Path) -> N
     target.write_text("value = 1\n", encoding="utf-8", newline="")
 
     result = CodingPatchRuntime(ws, permissions).apply(
-        project, _patch("app.py", "value = 1\n", "value = 2\n")
+        project, _patch("project/app.py", "value = 1\n", "value = 2\n")
     )
 
     assert result.status == PatchApplicationStatus.APPLIED
@@ -98,13 +98,13 @@ def test_multi_file_preflight_prevents_partial_patch(tmp_path: Path) -> None:
         summary="multi",
         changes=(
             CodeChange(
-                target_path="a.py",
+                target_path="project/a.py",
                 original_sha256=hashlib.sha256(first.encode()).hexdigest(),
                 original_size_bytes=len(first.encode()),
                 replacement_content="a = 2\n",
             ),
             CodeChange(
-                target_path="b.py",
+                target_path="project/b.py",
                 original_sha256=hashlib.sha256(second.encode()).hexdigest(),
                 original_size_bytes=len(second.encode()),
                 replacement_content="b = 2\n",
@@ -121,7 +121,7 @@ def test_multi_file_preflight_prevents_partial_patch(tmp_path: Path) -> None:
 
 def test_patch_target_cannot_escape_project(tmp_path: Path) -> None:
     ws, project, permissions, _ = _setup(tmp_path, approval=lambda _: True)
-    patch = _patch("project/../outside.py", "x\n", "y\n")
+    patch = _patch("../outside.py", "x\n", "y\n")
 
     with pytest.raises(CodingWorkspaceError):
         CodingPatchRuntime(ws, permissions).apply(project, patch)
