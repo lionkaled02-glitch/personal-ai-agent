@@ -1,4 +1,5 @@
 """Production-oriented HTTP/WebSocket application shell for Personal AI Agent."""
+
 from __future__ import annotations
 
 import asyncio
@@ -41,8 +42,13 @@ def _run_task(task_id: str, request: TaskRequest) -> str:
         with approval_lock:
             approval_waiters[approval_id] = waiter
         store.create_approval(
-            approval_id, approval.task_id, approval.step_id, approval.tool_name,
-            int(approval.permission_level), approval.reason, datetime.now(UTC).isoformat(),
+            approval_id,
+            approval.task_id,
+            approval.step_id,
+            approval.tool_name,
+            int(approval.permission_level),
+            approval.reason,
+            datetime.now(UTC).isoformat(),
         )
         task = store.get_task(task_id)
         if task is not None and task.state is TaskState.RUNNING:
@@ -90,7 +96,14 @@ def health() -> dict[str, str]:
 def create_task(request: TaskRequest) -> dict[str, str]:
     task_id = str(uuid.uuid4())
     # Persist a durable shell before handing work to the executor.
-    store.save_task(Task(id=task_id, request=request.request, created_at=datetime.now(UTC), updated_at=datetime.now(UTC)))
+    store.save_task(
+        Task(
+            id=task_id,
+            request=request.request,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+    )
     executor.submit(_run_task, task_id, request)
     return {"status": "accepted", "task_id": task_id}
 
@@ -118,9 +131,7 @@ def decide_approval(approval_id: str, decision: ApprovalDecision) -> dict[str, A
     record = store.get_approval(approval_id)
     if record is None:
         raise HTTPException(status_code=404, detail="approval not found")
-    changed = store.decide_approval(
-        approval_id, decision.approved, datetime.now(UTC).isoformat()
-    )
+    changed = store.decide_approval(approval_id, decision.approved, datetime.now(UTC).isoformat())
     if not changed:
         raise HTTPException(status_code=409, detail="approval already decided")
     with approval_lock:
@@ -171,4 +182,8 @@ async def event_stream(websocket: WebSocket, task_id: str) -> None:
 
 
 # The bundled UI is intentionally static and contains no credentials or privileged logic.
-app.mount("/", StaticFiles(directory=Path(__file__).resolve().parent / "static", html=True), name="ui")
+app.mount(
+    "/",
+    StaticFiles(directory=Path(__file__).resolve().parent / "static", html=True),
+    name="ui",
+)
