@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-
 from agent_core.media import MediaRequest, MediaRuntime, MockMediaGenerator
 
 
