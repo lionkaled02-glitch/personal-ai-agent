@@ -39,3 +39,16 @@ def test_task_store_survives_reopen(tmp_path: Path) -> None:
 
     assert reopened.get_task(task.id) is not None
     assert reopened.list_tasks(10)[0].request == "persist me"
+
+
+def test_approval_round_trip_and_single_decision(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path / "tasks.sqlite3")
+    now = datetime.now(UTC).isoformat()
+    store.create_approval("ap-1", "task-1", "step-1", "demo", 2, "needs approval", now)
+
+    record = store.get_approval("ap-1")
+    assert record is not None
+    assert record["status"] == "PENDING"
+    assert store.decide_approval("ap-1", True, now) is True
+    assert store.decide_approval("ap-1", False, now) is False
+    assert store.get_approval("ap-1")["status"] == "APPROVED"
