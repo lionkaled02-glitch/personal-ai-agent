@@ -48,14 +48,6 @@ def _run_task(task_id: str, request: TaskRequest) -> str:
         if task is not None and task.state is TaskState.RUNNING:
             task.transition(TaskState.WAITING_FOR_USER, now=datetime.now(UTC))
             store.save_task(task)
-        agent_events = agent.events if "agent" in locals() else None
-        if agent_events is not None:
-            agent_events.emit(
-                EventType.APPROVAL_REQUIRED,
-                task_id=task_id, step_id=approval.step_id,
-                data={"approval_id": approval_id, "tool_name": approval.tool_name,
-                      "permission_level": approval.permission_level.name},
-            )
         waiter.wait(timeout=300)
         record = store.get_approval(approval_id)
         with approval_lock:
@@ -66,7 +58,6 @@ def _run_task(task_id: str, request: TaskRequest) -> str:
             store.save_task(task)
         return bool(record and record["status"] == "APPROVED")
 
-    # Each task receives a fresh in-process agent so event history is isolated.
     # Each task receives a fresh in-process agent so event history is isolated.
     gateway = build_gateway(settings)
     agent = Agent.create_configured(settings=settings, gateway=gateway, approval=approval_callback)
@@ -114,11 +105,15 @@ def create_task(request: TaskRequest) -> dict[str, str]:
 
 @app.get("/tasks")
 def list_tasks(limit: int = 50) -> list[dict[str, Any]]:
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 500")
     return [task.model_dump(mode="json") for task in store.list_tasks(limit)]
 
 
 @app.get("/approvals")
 def list_approvals(task_id: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 500")
     return store.list_approvals(task_id, limit)
 
 
@@ -153,6 +148,8 @@ def get_task(task_id: str) -> dict[str, Any]:
 
 @app.get("/tasks/{task_id}/events")
 def get_events(task_id: str, limit: int = 200) -> list[dict[str, Any]]:
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 500")
     if store.get_task(task_id) is None:
         raise HTTPException(status_code=404, detail="task not found")
     return store.events(task_id, limit)
