@@ -287,12 +287,17 @@ from .memory import (
     metadata_size_bytes,
 )
 from .memory_tools import (
+    FORGET_TOOL_NAME,
+    LIST_MEMORIES_TOOL_NAME,
     MEMORY_TOOL_NAMES,
     ForgetTool,
     ListMemoriesTool,
     RecallTool,
+    RECALL_TOOL_NAME,
     RememberTool,
+    REMEMBER_TOOL_NAME,
     UpdateMemoryTool,
+    UPDATE_MEMORY_TOOL_NAME,
     register_memory_tools,
 )
 from .permissions import (
@@ -586,6 +591,7 @@ __all__ = [
     "Memory",
     "MEMORY_TOOL_NAMES",
     "MemoryLimits",
+    "MEMORY_TOOL_NAMES",
     "MemoryRetriever",
     "MemoryStore",
     "MemoryStoreError",
