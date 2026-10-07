@@ -4,23 +4,27 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Personal AI Agent</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <main class="shell">
     <header>
       <h1>Personal AI Agent</h1>
-      <p>Task console — submit, monitor, and inspect agent work.</p>
+      <p>Task console — submit, monitor, approve, and inspect agent work.</p>
     </header>
     <section class="composer">
       <textarea id="request" maxlength="20000" placeholder="What should the agent do?"></textarea>
       <button id="run">Run task</button>
+    </section>
+    <section class="approvals" id="approvals-section" hidden>
+      <h2>Approvals</h2>
+      <div id="approvals" class="approval-list"></div>
     </section>
     <section class="grid">
       <article><h2>Task</h2><pre id="task">No task selected.</pre></article>
       <article><h2>Events</h2><div id="events" class="events"></div></article>
     </section>
   </main>
-  <script src="/static/app.js"></script>
+  <script src="/app.js"></script>
 </body>
 </html>
