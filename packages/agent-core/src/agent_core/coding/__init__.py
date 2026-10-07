@@ -1,9 +1,11 @@
-"""Phase 10 coding foundation: bounded data, read-only analysis, diagnostics.
+"""Phase 10 coding foundation: bounded analysis, diagnostics, and patch application.
 
 The local runtime reads validated workspace files and returns bounded facts;
 the diagnostics engine consumes only those source snapshots. Edit proposals
-and test plans remain data. This package adds no file writes, code execution,
-command runner, or real model provider. Resolve paths through ``Workspace``.
+and test plans remain structured data, while patch application is a separate
+permission-gated mutation step with live hash/size preconditions. This package
+adds no shell, arbitrary code execution, command runner, or real model provider.
+Resolve paths through Workspace.
 """
 
 from .diagnostics import CodeDiagnosticBatch, CodeDiagnosticsEngine
@@ -55,6 +57,12 @@ from .models import (
     SkippedCodeFile,
     TestCasePlan,
 )
+from .patches import (
+    CodingPatchRuntime,
+    PatchApplicationResult,
+    PatchApplicationStatus,
+    PatchFileResult,
+)
 from .runtime import CodingAnalysisRuntime
 
 __all__ = [
@@ -89,6 +97,7 @@ __all__ = [
     "CodingLimits",
     "CodingObservation",
     "CodingOperation",
+    "CodingPatchRuntime",
     "CodingPermissionError",
     "CodingProject",
     "CodingProvider",
@@ -100,7 +109,10 @@ __all__ = [
     "DiagnosticSeverity",
     "MockCodingProvider",
     "ObservedCodeFile",
+    "PatchApplicationResult",
+    "PatchApplicationStatus",
     "PatchCheckStatus",
+    "PatchFileResult",
     "PatchValidationCheck",
     "PatchValidationMetadata",
     "PatchValidationStatus",

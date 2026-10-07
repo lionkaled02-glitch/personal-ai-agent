@@ -7,8 +7,7 @@ repository. It explicitly distinguishes:
 - **PLANNED** — designed and on the roadmap, not yet built.
 - **NOT IMPLEMENTED** — desired, no design or code yet.
 
-The target is a modular personal autonomous AI agent. It is built
-**incrementally**, so most layers are intentionally not present yet.
+The target is a modular personal autonomous AI agent. The implemented system is intentionally bounded and fail-safe; remaining gaps are explicit in the roadmap.
 
 ---
 
@@ -19,11 +18,11 @@ dependency direction (a layer may depend only on layers below it).
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│  User Interface          (CLI today; desktop/web later)    │  NOT IMPLEMENTED
+│  User Interface          (bundled web UI)                 │  IMPLEMENTED
 ├────────────────────────────────────────────────────────────┤
-│  API                    (HTTP/WebSocket)                   │  NOT IMPLEMENTED
+│  API                    (HTTP/WebSocket)                   │  IMPLEMENTED
 ├────────────────────────────────────────────────────────────┤
-│  Task Manager           (task store, queue, persistence)   │  NOT IMPLEMENTED
+│  Task Manager           (task store, approvals, persistence) │ IMPLEMENTED
 ├────────────────────────────────────────────────────────────┤
 │  Agent Orchestrator     (Agent + Executor)                 │  IMPLEMENTED
 ├────────────────────────────────────────────────────────────┤
@@ -49,21 +48,13 @@ implemented. Provider-neutral computer and browser foundations exist, with
 optional Windows UI Automation and Playwright adapters; unrestricted browser
 or computer control does not.
 
-The implemented portion is the middle band: **Orchestrator → Planner →
-Model Gateway → Provider → Tool Registry → Permission**, plus the opt-in
-Phase 6 computer runtime, the Phase 7 visual layer over its screenshot path,
-the Phase 8 voice transport, and the Phase 9 bounded browser runtime. Phase
-10 Step 1 adds a non-executing coding data/provider foundation; it is not
-wired into the Agent loop and has no write or test-execution runtime. The
-integrated capabilities use the same Agent loop and permission system. The
-events backbone runs alongside them.
+The implemented system includes the Agent loop, model gateway, tool runtime, permissions, bounded computer/vision/voice/browser/coding/media capabilities, durable task/event/approval persistence, persistent memory, and the bundled web UI/API. Specialized capabilities remain opt-in and provider-neutral where external integrations are intentionally excluded.
 
 ---
 
 ## 2. Implemented components
 
-All implemented code lives in the single package
-`packages/agent-core/src/agent_core/`.
+The core agent implementation lives in `packages/agent-core/src/agent_core/`; the HTTP/API shell and bundled UI live under `apps/backend/`.
 
 | Module | Key types | Responsibility | Status |
 | --- | --- | --- | --- |
@@ -115,13 +106,13 @@ All implemented code lives in the single package
 | `browser/runtime.py`, `browser/verification.py`, `browser/recovery.py` | `BrowserRuntime`, explicit named operations, `VERIFIED`/`FAILED`/`UNCERTAIN`, safe recovery | Shared permission/event integration; observe → authorize → act → fresh observe → verify; sensitive-control blocking, page-text redaction, exact named-page targeting, one bounded navigation retry only for explicitly retryable safe failures, no high-risk retries. | IMPLEMENTED |
 | `browser/mock.py`, `browser/playwright_provider.py` | `MockBrowserProvider`, `PlaywrightBrowserProvider` | Deterministic offline provider; optional Playwright sync provider loaded only at launch, with new ephemeral contexts, no profile persistence, scheme checks on navigations, and bounded text/elements/screenshots. Playwright binaries are separate from the Python extra. | IMPLEMENTED |
 | `browser/serialization.py`, `browser/tools.py` | Safe projections, `BROWSER_TOOL_NAMES`, `register_browser_tools` | Fixed explicit LOW/MEDIUM/HIGH-classified tools; sensitive Tool Runtime I/O is event-redacted. `BrowserActionResult` uncertainty/failure is not reported as tool success. No arbitrary browser action dispatcher. | IMPLEMENTED |
-| `coding/models.py` | `CodingProject`, `CodeFile`, bounded analysis/edit/test-plan models, categorized `CodeDiagnostic`, `CodePatch`, `CodingObservation` | Provider-neutral data contracts; source/repository/provider text remains untrusted, source fields are hidden from repr, and observations contain metadata only. Diagnostics carry bounded categories, severity, paths, and optional source regions. Proposed replacements use original SHA-256/size preconditions; no patch is applied. | IMPLEMENTED |
-| `coding/interfaces.py`, `coding/limits.py`, `coding/errors.py` | `CodingProvider`, `CodingLimits`, `CodingOperation`, structured errors | Bounded analysis, edit-proposal, test-planning, and diagnostics contract; `CODING_*` settings are hard-clamped. The only operations are LOW-risk data/planning operations; there is no write/apply, code-execution, or test-execution interface. | IMPLEMENTED |
+| `coding/models.py` | `CodingProject`, `CodeFile`, bounded analysis/edit/test-plan models, categorized `CodeDiagnostic`, `CodePatch`, `CodingObservation` | Provider-neutral data contracts; source/repository/provider text remains untrusted, source fields are hidden from repr, and observations contain metadata only. Diagnostics carry bounded categories, severity, paths, and optional source regions. Proposed replacements use original SHA-256/size preconditions. Patch application is a separate permission-gated mutation step with all-or-nothing preflight and atomic writes. | IMPLEMENTED |
+| `coding/interfaces.py`, `coding/limits.py`, `coding/errors.py` | `CodingProvider`, `CodingLimits`, `CodingOperation`, structured errors | Bounded analysis, edit-proposal, test-planning, and diagnostics contract; `CODING_*` settings are hard-clamped. The analysis/planning operations are LOW-risk; patch application is MEDIUM permission-gated. There is still no arbitrary code execution, compiler invocation, package installation, or host test execution. | IMPLEMENTED |
 | `coding/runtime.py`, `coding/diagnostics.py` | `CodingAnalysisRuntime`, `CodeDiagnosticsEngine` | Workspace-scoped read-only discovery and deterministic bounded Python/JavaScript/TypeScript syntax/style diagnostics; no code execution, compiler, or external provider. Diagnostics apply shared `CodingLimits`. | IMPLEMENTED |
 | `coding/mock.py` | `MockCodingProvider` | Deterministic offline mock with optional sanitized failure/timeout simulation. It only consumes supplied snapshots and returns proposals/plans; it has no filesystem, network, process, compiler, or test-run capability. | IMPLEMENTED |
 | `agent.py` | `Agent` | Facade wiring planner + registry + permissions + events + executor into canonical `run(request)`. Voice uses the same loop once; Phase 6 computer, Phase 7 vision, and Phase 9 browser tools are opt-in with explicitly supplied providers. Browser tools share the Agent's event bus and permission manager. | IMPLEMENTED |
 
-Entry point: `apps/backend/src/main.py` (demo, mock provider by default, no API key).
+Entry points: `apps/backend/src/main.py` for the bounded API service and the bundled static web UI. The demo/mock path remains available without an API key.
 
 ---
 
@@ -396,8 +387,8 @@ Each decision lists the *why*, per the AGENTS.md rule to document decisions.
   never silent.
 - **D18 — Memory is explicit, typed, provider-neutral, and policy-enforced
   at the store layer.** Phase 5 adds a `Memory` model + `MemoryStore`
-  protocol with the required `InMemoryMemoryStore` (no external DB, no
-  network). Key choices: (a) **creation is explicit** — a MEDIUM-permission
+  protocol with both `InMemoryMemoryStore` and durable local `SQLiteMemoryStore`
+  implementations (no network). Key choices: (a) **creation is explicit** — a MEDIUM-permission
   `remember` tool (or a clearly defined trusted internal pathway); nothing
   auto-saves conversation text, so there is no implicit privacy loss and no
   unbounded growth; (b) **identity is deterministic** — ids are pure
@@ -502,11 +493,11 @@ Each decision lists the *why*, per the AGENTS.md rule to document decisions.
   repository/provider text as untrusted, and represents edits as full-file
   replacements with source-hash preconditions. Step 2 adds local read-only
   analysis through `Workspace`; Step 3 adds deterministic diagnostics over
-  those validated snapshots only. Neither step writes or executes source text
-  or makes network calls. Reusing `Workspace.resolve()` keeps path safety in
-  one place. Patch application, commands/tests, and real providers remain out
-  of scope. Any future write must be a separate explicit operation using the
-  existing permission system.
+  those validated snapshots only. Neither analysis nor diagnostics executes
+  source text or makes network calls. Reusing `Workspace.resolve()` keeps path
+  safety in one place. Patch application is a separate MEDIUM permission-gated
+  mutation with live hash/size preconditions, all-or-nothing preflight, and
+  atomic writes; commands/tests and real providers remain out of scope.
 
 ---
 
@@ -541,23 +532,24 @@ These are **NOT IMPLEMENTED** and must not be added prematurely
   Phase 8 voice and the bounded Phase 9 browser foundations are implemented;
   only actual audio hardware, unrestricted browsing, and external voice
   providers remain future work.
-- Image/video generation and presentation/document *generation*. (Reading &
-  analyzing existing documents — TXT/MD/PDF/DOCX/PPTX/XLSX — is IMPLEMENTED
-  in Phase 4; producing new documents is not.)
+- Presentation/document *generation*. (Reading & analyzing existing documents —
+  TXT/MD/PDF/DOCX/PPTX/XLSX — is IMPLEMENTED in Phase 4; producing new
+  documents is not.) Image/video generation has a bounded provider-neutral
+  foundation in Phase 11; real external providers remain optional.
 - **Semantic/vector** retrieval (embeddings) for documents *or* memory.
   Phase 4 document retrieval and Phase 5 memory retrieval are deliberately
   *lexical* and deterministic (in-memory `KnowledgeStore` behind the
   `RetrievalIndex` protocol; `InMemoryMemoryStore`/`LexicalMemoryRetriever`
   behind the `MemoryStore`/`MemoryRetriever` protocols); a vector/embedding
   backend is a future phase that plugs into those same protocols.
-- **Persistent (durable) memory** across process restarts. Phase 5 memory
-  is in-process only (`InMemoryMemoryStore`); a durable backend (e.g.
-  SQLite) is a future phase that implements the `MemoryStore` protocol.
-- Task Manager layer (task persistence, queueing, multi-task scheduling).
+- Semantic/vector memory retrieval remains future work. Durable local memory
+  is implemented by `SQLiteMemoryStore` behind the `MemoryStore` protocol; the
+  in-memory implementation remains available for demos and tests.
+- Multi-task scheduling beyond the current bounded background executor; task
+  persistence, events, approvals, and WebSocket streaming are implemented.
 - User interface and API layer (HTTP/WebSocket).
-- `WAITING_FOR_USER`, `PAUSED`, `TASK_PAUSED`, `TASK_RESUMED` are **modeled**
-  in the state machine but not yet *driven* by any implemented flow (the
-  approval flow is synchronous today).
+- `PAUSED`, `TASK_PAUSED`, `TASK_RESUMED` remain modeled but are not yet driven.
+  `WAITING_FOR_USER` is now driven by the durable API approval flow.
 
 ---
 

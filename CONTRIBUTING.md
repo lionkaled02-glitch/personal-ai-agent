@@ -199,12 +199,12 @@ plus memory-specific rules:
 6. **Deletion stays safe.** `forget` soft-deactivates by default; hard
    delete is an explicit opt-in behind HIGH-permission approval and affects
    exactly one memory. Don't introduce recursive/batch deletion.
-7. **No new capability in the memory layer.** The `memory/`,
-   `memory_tools/`, and `rag/` packages are stdlib + pydantic only — a
-   static whitelist test enforces it. No network, no database drivers, no
-   subprocess/shell/eval/exec. A durable or vector backend implements the
-   `MemoryStore` / `MemoryRetriever` protocols as a *new* backend (see
-   ARCHITECTURE.md §6), not an addition to these modules.
+7. **Keep the memory core bounded.** The memory models, policy, retrieval,
+   and tools remain dependency-light and contain no network, subprocess,
+   shell, eval/exec, or arbitrary code capability. The durable
+   `SQLiteMemoryStore` is the explicit stdlib-backed persistence adapter;
+   semantic/vector backends remain separate implementations of the
+   `MemoryStore` / `MemoryRetriever` protocols (see ARCHITECTURE.md §6).
 8. **Privacy in events.** Keep confirmations metadata-only (no content in
    `remember` output/events); rely on `bounded_value` for the rest. Full
    memory content must not appear in event payloads by default.
@@ -283,6 +283,7 @@ When you change code, update [ARCHITECTURE.md](ARCHITECTURE.md) and
 A change is done when:
 
 - [ ] `ruff format .`, `ruff check .`, `mypy`, and `pytest` all pass.
+- [ ] If behavior changed, add or update focused tests and keep docs truthful.
 - [ ] No secrets/credentials introduced.
 - [ ] No scratch or unnecessary files.
 - [ ] Docs (labels + descriptions) match the implementation.

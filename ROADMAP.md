@@ -213,7 +213,7 @@ decisions.
 | Security: injection in memory/document content never triggers tools, permissions, or approval bypass; no auto-persistence of conversation; no new subprocess/shell/network/DB capability (static + behavioral tests) | IMPLEMENTED |
 | Configuration: `MEMORY_MAX_ITEMS`, `MEMORY_MAX_CONTENT_CHARS`, `MEMORY_MAX_METADATA_BYTES`, `MEMORY_MAX_RECALL_RESULTS`, `MEMORY_MAX_CONTEXT_CHARS`, `MEMORY_MAX_CONTEXT_ITEMS`, `MEMORY_SHORT_TERM_TTL_S`, `MEMORY_WORKING_TTL_S` (defaults in `.env.example`) | IMPLEMENTED |
 | Vector store + embeddings (via `ModelProvider.embed`) as `MemoryRetriever`/`RetrievalIndex` implementations | NOT IMPLEMENTED (future — the protocols are the seam) |
-| Persistent, durable memory store (survives process restarts) as a `MemoryStore` implementation | NOT IMPLEMENTED (future) |
+| Persistent, durable SQLite memory store (survives process restarts) as a `MemoryStore` implementation | IMPLEMENTED — bounded local SQLite persistence |
 
 **Acceptance (met):** memory CRUD/list/recall are deterministic (stable
 ids, `(created_at, memory_id)` ordering, id tie-breaks) and covered by
@@ -234,8 +234,9 @@ Phase 0–4 suite still passes (regression).
 - Retrieval is lexical (token-based) by design — no semantic matching for
   either documents (Phase 4) or memory (Phase 5); ranking quality is
   commensurate. Embeddings/vector backends are a future phase.
-- The `InMemoryMemoryStore` is in-process: memories do not survive a
-  process restart (durability is a future `MemoryStore` implementation).
+- `InMemoryMemoryStore` remains in-process; durable local persistence is provided
+  separately by `SQLiteMemoryStore`, which uses the same `MemoryStore` seam and
+  persists memory lifecycle changes across process restarts.
 - The secret-content guard is a heuristic (conservative patterns), not a
   guarantee — credentials must never be stored in memory at all.
 - Naive datetimes are assumed UTC (documented contract); expiry is
@@ -425,7 +426,9 @@ mock, analyzer, and diagnostics engine make no network requests.
 | Read-only `CodingAnalysisRuntime`; bounded discovery, UTF-8 snapshots, Python AST, shallow JS/TS scan, metadata-only formats | IMPLEMENTED |
 | Explicit analyzed/skipped file metadata, truncation reasons, and file/entry/output bounds | IMPLEMENTED |
 | `CodeDiagnosticsEngine`; bounded Python syntax, JavaScript/TypeScript delimiter, and shared style diagnostics | IMPLEMENTED |
-| Coding tools, source writes, patch application, test/build execution | NOT IMPLEMENTED (outside Steps 1–3) |
+| Coding analysis tools and source observation | IMPLEMENTED — bounded, workspace-scoped |
+| Source patch application | IMPLEMENTED — separate MEDIUM permission-gated, hash/size-checked, all-or-nothing preflight |
+| Test/build execution | NOT IMPLEMENTED — deliberately excluded from host runtime |
 | Shell/process/command use, arbitrary execution, compilers, package installation, real model providers | NOT IMPLEMENTED (explicitly excluded) |
 
 **Acceptance:** proposed replacements remain structured data and are checked
@@ -460,7 +463,7 @@ is not permission to add generic control.
 | Manual Windows compatibility/accessibility validation matrix | PLANNED |
 | Additional narrowly scoped, named workflows with risk review and deterministic postconditions | NOT IMPLEMENTED |
 | Any destructive or externally consequential computer operation (HIGH + explicit approval) | NOT IMPLEMENTED |
-| Persistent, redaction-aware audit trail (Phase 12 task/event persistence) | NOT IMPLEMENTED |
+| Persistent, redaction-aware task/event trail (Phase 12) | IMPLEMENTED — bounded operational event persistence |
 | Remote desktop/network control, shell/PowerShell, arbitrary code/actions | NOT IMPLEMENTED (excluded by current safety scope) |
 
 The Phase 6 adapter never launches processes and exposes no generic arbitrary-action tool.
@@ -469,11 +472,16 @@ The Phase 6 adapter never launches processes and exposes no generic arbitrary-ac
 
 ## Phase 11 — Media generation
 
+Media generation is intentionally provider-neutral. Generated artifacts are
+stored under the configured data boundary and are never treated as trusted
+instructions.
+
 | Item | Status |
 | --- | --- |
-| Image generation provider | NOT IMPLEMENTED |
-| Video generation provider | NOT IMPLEMENTED |
-| Outputs under `data/generated` | NOT IMPLEMENTED |
+| Image generation provider | IMPLEMENTED — provider protocol, bounded request/result models, deterministic mock, and artifact writer |
+| Video generation provider | IMPLEMENTED — provider protocol, bounded request/result models, deterministic mock, and artifact writer |
+| Outputs under `data/generated` | IMPLEMENTED |
+| Credential/network access | OPTIONAL and disabled by default; no secret is stored in task history |
 
 ---
 
@@ -483,10 +491,12 @@ The user-facing shell and durable task management.
 
 | Item | Status |
 | --- | --- |
-| Task Manager: persistence, queue, multi-task scheduling | NOT IMPLEMENTED |
-| API layer (HTTP/WebSocket) streaming events to clients | NOT IMPLEMENTED |
-| User interface (CLI → desktop/web) | NOT IMPLEMENTED |
-| Drive `WAITING_FOR_USER` / `PAUSED` / resume (async approvals) | NOT IMPLEMENTED |
+| Durable SQLite task/event persistence and bounded task listing | IMPLEMENTED |
+| Background task queue with stable task IDs | IMPLEMENTED |
+| FastAPI HTTP task API and WebSocket event streaming | IMPLEMENTED |
+| Backend smoke tests and repository CI quality gates | IMPLEMENTED |
+| User interface (bundled web UI) | IMPLEMENTED — static task submission, task state/events, and approval controls |
+| Drive `WAITING_FOR_USER` / `PAUSED` / resume (async approvals) | IMPLEMENTED — durable approval records, HTTP approve/deny endpoints, bounded waiter, state transitions, and wake-up are wired |
 
 ---
 

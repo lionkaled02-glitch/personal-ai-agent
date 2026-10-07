@@ -29,6 +29,7 @@ from .events import Clock, EventBus, EventType, bounded_text, utc_now
 from .executor import BasicVerifier, Executor, Verifier
 from .memory.limits import MemoryLimits
 from .memory.retrieval import LexicalMemoryRetriever
+from .memory.sqlite_store import SQLiteMemoryStore
 from .memory.store import InMemoryMemoryStore, MemoryStore
 from .memory_tools import register_memory_tools
 from .permissions import ApprovalCallback, PermissionManager
@@ -156,6 +157,7 @@ class Agent:
         gateway: ModelGateway | None = None,
         computer_provider: ComputerProvider | None = None,
         browser_provider: BrowserProvider | None = None,
+        memory_store: MemoryStore | None = None,
     ) -> Agent:
         """An agent wired from configuration (Phase 1).
 
@@ -171,8 +173,9 @@ class Agent:
         plus the Phase 3 workspace tools bound to ``settings.workspace_root``,
         the Phase 4 document tools bound to the same boundary and an
         in-memory knowledge store whose limits come from the settings, and
-        the Phase 5 memory tools bound to an in-memory memory store whose
-        limits also come from the settings. Computer and browser tools are
+        the Phase 5 memory tools bound to the durable SQLite memory store by
+        default (or a caller-supplied MemoryStore) whose limits also come
+        from the settings. Computer and browser tools are
         registered only when explicit providers are passed; they use the same
         permission manager and event bus, with limits from ``COMPUTER_*`` and
         ``BROWSER_*``. Browser network access is opt-in and requires deployment
@@ -187,7 +190,13 @@ class Agent:
         register_workspace_tools(registry, workspace)
         store = KnowledgeStore(DocumentLimits.from_settings(resolved))
         register_document_tools(registry, workspace, store)
-        memory = InMemoryMemoryStore(MemoryLimits.from_settings(resolved), clock=clock)
+        memory = (
+            memory_store
+            if memory_store is not None
+            else SQLiteMemoryStore(
+                resolved.data_root / "memory.sqlite3", MemoryLimits.from_settings(resolved)
+            )
+        )
         register_memory_tools(registry, memory, clock=clock)
         permissions = PermissionManager(approval=approval)
         events = EventBus(clock=clock)
@@ -257,6 +266,7 @@ class Agent:
         request: str,
         *,
         input_channel: Literal["text", "voice"] = "text",
+        task_id: str | None = None,
     ) -> Task:
         """Run one user request through the canonical agent task flow.
 
@@ -269,6 +279,8 @@ class Agent:
             raise ValueError("unsupported input channel")
         now = self._clock()
         task = Task.create(request, now=now)
+        if task_id is not None:
+            task.id = task_id
         created_data = (
             {"input_channel": "voice", "request_chars": len(request)}
             if input_channel == "voice"

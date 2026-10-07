@@ -1,0 +1,16 @@
+:root { font-family: system-ui, sans-serif; color-scheme: dark; }
+body { margin: 0; background: #10131a; color: #eef2f7; }
+.shell { max-width: 1100px; margin: 0 auto; padding: 32px 20px; }
+header { margin-bottom: 24px; }
+h1 { margin-bottom: 6px; }
+p { color: #aab4c3; }
+.composer { display: grid; gap: 12px; margin-bottom: 20px; }
+textarea { min-height: 130px; resize: vertical; padding: 14px; border-radius: 10px; border: 1px solid #343b48; background: #171c25; color: inherit; }
+button { width: fit-content; padding: 10px 18px; border: 0; border-radius: 8px; cursor: pointer; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+article { min-width: 0; padding: 16px; border: 1px solid #2b323f; border-radius: 12px; background: #151a22; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.events { display: grid; gap: 8px; max-height: 500px; overflow: auto; }
+.event { padding: 10px; border-radius: 8px; background: #1c222c; }
+.event small { color: #98a4b5; }
+@media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
