@@ -54,8 +54,7 @@ The implemented system includes the Agent loop, model gateway, tool runtime, per
 
 ## 2. Implemented components
 
-All implemented code lives in the single package
-`packages/agent-core/src/agent_core/`.
+The core agent implementation lives in `packages/agent-core/src/agent_core/`; the HTTP/API shell and bundled UI live under `apps/backend/`.
 
 | Module | Key types | Responsibility | Status |
 | --- | --- | --- | --- |
