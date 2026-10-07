@@ -173,8 +173,8 @@ class Agent:
         plus the Phase 3 workspace tools bound to ``settings.workspace_root``,
         the Phase 4 document tools bound to the same boundary and an
         in-memory knowledge store whose limits come from the settings, and
-        the Phase 5 memory tools bound to an in-memory memory store whose
-        limits also come from the settings. Computer and browser tools are
+        the Phase 5 memory tools bound to the durable SQLite memory store by
+        default (or a caller-supplied MemoryStore) whose limits also come from the settings. Computer and browser tools are
         registered only when explicit providers are passed; they use the same
         permission manager and event bus, with limits from ``COMPUTER_*`` and
         ``BROWSER_*``. Browser network access is opt-in and requires deployment
