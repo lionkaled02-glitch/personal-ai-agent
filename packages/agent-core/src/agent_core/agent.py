@@ -193,7 +193,9 @@ class Agent:
             memory_store
             if memory_store is not None
             else SQLiteMemoryStore(
-                resolved.data_root / "memory.sqlite3", MemoryLimits.from_settings(resolved)
+                resolved.data_root / "memory.sqlite3",
+                MemoryLimits.from_settings(resolved),
+                clock=clock,
             )
         )
         register_memory_tools(registry, memory, clock=clock)

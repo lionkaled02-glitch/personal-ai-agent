@@ -52,11 +52,26 @@ same-path ephemeral local pixel-only screenshot observation and verification;
 it does not add OCR or semantic vision. Phase 8 (IMPLEMENTED) adds a
 provider-neutral voice transport foundation with bounded ephemeral audio,
 local deterministic mocks, and a same-`Agent.run` input path; real microphone
-capture and external STT/TTS remain NOT IMPLEMENTED. Browser automation,
-media generation, semantic/vector retrieval, durable memory, UI, and document
-creation remain PLANNED — see ARCHITECTURE.md and ROADMAP.md.
-Phase 10 Step 1 adds bounded coding data contracts and a local mock only;
-it does not add writes or execution.
+capture and external STT/TTS remain NOT IMPLEMENTED.
+
+Phase 10 (IMPLEMENTED, Steps 1-4): bounded coding data contracts, an offline
+deterministic mock, a read-only local analyzer, deterministic
+Python/JavaScript/TypeScript diagnostics, and a separate MEDIUM
+permission-gated patch application runtime (``CodingPatchRuntime``) with
+live SHA-256/size preconditions and all-or-nothing preflight. There is still
+no shell/command use, compiler, package installation, or test/build
+execution.
+
+Phase 11 (IMPLEMENTED): a provider-neutral, bounded media generation
+foundation (image/video request and artifact models, deterministic mock
+providers, and an output-bounded artifact writer). Real external media
+providers remain optional and are not enabled by default.
+
+Durable memory (``SQLiteMemoryStore``) is IMPLEMENTED behind the same
+``MemoryStore`` protocol. The HTTP/WebSocket API, durable task/approval
+persistence, and the bundled web UI live in ``apps/backend`` (Phase 12).
+Semantic/vector retrieval, document creation, and unrestricted host
+execution remain PLANNED — see ARCHITECTURE.md and ROADMAP.md.
 """
 
 from .agent import Agent
@@ -149,6 +164,7 @@ from .coding import (
     CodingLimits,
     CodingObservation,
     CodingOperation,
+    CodingPatchRuntime,
     CodingPermissionError,
     CodingProject,
     CodingProvider,

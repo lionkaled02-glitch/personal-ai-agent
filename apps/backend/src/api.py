@@ -22,6 +22,9 @@ store = TaskStore(settings.data_root / "tasks.sqlite3")
 executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent-task")
 approval_waiters: dict[str, Event] = {}
 approval_lock = Lock()
+# Bounded wait for a human decision; on timeout the approval expires and the
+# step fails closed (denied). Fail-safe: no decision => no mutation.
+APPROVAL_WAIT_TIMEOUT_S = 300.0
 
 app = FastAPI(
     title="Personal AI Agent",
@@ -33,6 +36,37 @@ app = FastAPI(
 class TaskRequest(BaseModel):
     request: str = Field(min_length=1, max_length=20_000)
     input_channel: str = Field(default="text", pattern="^(text|voice)$")
+
+
+def _transition_stored_task(task_id: str, expected: TaskState, target: TaskState) -> None:
+    """Persist one durable task-state transition for a live worker task.
+
+    The guard makes this a no-op when the stored task is missing, already
+    terminal, or not in the expected state, so a late or raced transition can
+    never corrupt the durable shell.
+    """
+    task = store.get_task(task_id)
+    if task is None or task.state is not expected:
+        return
+    task.transition(target, now=datetime.now(UTC))
+    store.save_task(task)
+
+
+def _mark_task_failed(task_id: str) -> None:
+    """Force the durable shell to FAILED through legal transitions only."""
+    task = store.get_task(task_id)
+    if task is None or task.is_terminal():
+        return
+    now = datetime.now(UTC)
+    if task.state is TaskState.CREATED:
+        task.transition(TaskState.PLANNING, now=now)
+    if task.state is TaskState.WAITING_FOR_USER:
+        task.transition(TaskState.RUNNING, now=now)
+    if task.state is TaskState.PLANNING:
+        task.transition(TaskState.RUNNING, now=now)
+    task.error = "task execution failed"
+    task.transition(TaskState.FAILED, now=now)
+    store.save_task(task)
 
 
 def _run_task(task_id: str, request: TaskRequest) -> str:
@@ -50,26 +84,34 @@ def _run_task(task_id: str, request: TaskRequest) -> str:
             approval.reason,
             datetime.now(UTC).isoformat(),
         )
-        task = store.get_task(task_id)
-        if task is not None and task.state is TaskState.RUNNING:
-            task.transition(TaskState.WAITING_FOR_USER, now=datetime.now(UTC))
-            store.save_task(task)
-        waiter.wait(timeout=300)
+        _transition_stored_task(task_id, TaskState.RUNNING, TaskState.WAITING_FOR_USER)
+        waiter.wait(timeout=APPROVAL_WAIT_TIMEOUT_S)
         record = store.get_approval(approval_id)
+        if record is not None and record["status"] == "PENDING":
+            # The bounded wait elapsed with no human decision. Expire the
+            # record so the API/UI never offer a decision that can no longer
+            # take effect, and so the flow fails closed.
+            store.expire_approval(approval_id, datetime.now(UTC).isoformat())
+            record = store.get_approval(approval_id)
         with approval_lock:
             approval_waiters.pop(approval_id, None)
-        task = store.get_task(task_id)
-        if task is not None and task.state is TaskState.WAITING_FOR_USER:
-            task.transition(TaskState.RUNNING, now=datetime.now(UTC))
-            store.save_task(task)
+        _transition_stored_task(task_id, TaskState.WAITING_FOR_USER, TaskState.RUNNING)
         return bool(record and record["status"] == "APPROVED")
 
     # Each task receives a fresh in-process agent so event history is isolated.
+    # The workspace tools resolve against the configured boundary; ensure it
+    # exists so a fresh deployment does not fail every workspace write with
+    # "parent directory does not exist".
+    settings.workspace_root.mkdir(parents=True, exist_ok=True)
     gateway = build_gateway(settings)
     agent = Agent.create_configured(
         settings=settings, gateway=gateway, approval=cast(ApprovalCallback, approval_callback)
     )
     agent.events.subscribe(store.add_event)
+    # Reflect that the durable task is now executing, so status is truthful
+    # while it runs and WAITING_FOR_USER/FAILED transitions stay legal.
+    _transition_stored_task(task_id, TaskState.CREATED, TaskState.PLANNING)
+    _transition_stored_task(task_id, TaskState.PLANNING, TaskState.RUNNING)
     try:
         completed_task = agent.run(
             request.request,
@@ -79,11 +121,7 @@ def _run_task(task_id: str, request: TaskRequest) -> str:
     except Exception:
         # Keep the durable shell truthful if a worker fails outside Agent.run's
         # controlled error handling.
-        task = store.get_task(task_id)
-        if task is not None and not task.is_terminal():
-            task.error = "task execution failed"
-            task.transition(TaskState.FAILED, now=datetime.now(UTC))
-            store.save_task(task)
+        _mark_task_failed(task_id)
         raise
     store.save_task(completed_task)
     return completed_task.id

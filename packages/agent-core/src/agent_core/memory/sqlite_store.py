@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import sqlite3
 import threading
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from agent_core.events import Clock
 from agent_core.memory.limits import MemoryLimits
 from agent_core.memory.models import Memory, MemoryType
 from agent_core.memory.store import InMemoryMemoryStore
@@ -21,11 +22,16 @@ class SQLiteMemoryStore(InMemoryMemoryStore):
     introduced.
     """
 
-    def __init__(self, path: Path, limits: MemoryLimits | None = None) -> None:
+    def __init__(
+        self,
+        path: Path,
+        limits: MemoryLimits | None = None,
+        clock: Clock | None = None,
+    ) -> None:
         self._db_path = path
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._db_lock = threading.RLock()
-        super().__init__(limits)
+        super().__init__(limits, clock=clock)
         with self._connect() as db:
             db.execute(
                 "CREATE TABLE IF NOT EXISTS memories "
@@ -67,11 +73,15 @@ class SQLiteMemoryStore(InMemoryMemoryStore):
         return memory
 
     def purge_expired(self, now: datetime | None = None) -> int:
+        # Normalize `now` exactly once so the in-memory purge and the durable
+        # deletes are computed against the same instant.
+        now = now if now is not None else self._clock()
+        now = now.replace(tzinfo=UTC) if now.tzinfo is None else now
         removed_ids = [
             memory.memory_id
             for memory in self._items.values()
             if memory.memory_type in (MemoryType.SHORT_TERM, MemoryType.WORKING)
-            and memory.is_expired(now or self._clock())
+            and memory.is_expired(now)
         ]
         count = super().purge_expired(now)
         if removed_ids:

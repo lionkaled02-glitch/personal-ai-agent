@@ -53,3 +53,19 @@ def test_approval_round_trip_and_single_decision(tmp_path: Path) -> None:
     record = store.get_approval("ap-1")
     assert record is not None
     assert record["status"] == "APPROVED"
+
+
+def test_expired_approval_cannot_be_decided(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path / "tasks.sqlite3")
+    now = datetime.now(UTC).isoformat()
+    store.create_approval("ap-2", "task-2", "step-2", "demo", 2, "needs approval", now)
+
+    assert store.expire_approval("missing", now) is False
+    assert store.expire_approval("ap-2", now) is True
+    assert store.expire_approval("ap-2", now) is False
+
+    record = store.get_approval("ap-2")
+    assert record is not None
+    assert record["status"] == "EXPIRED"
+    # An expired approval is no longer decidable; the flow failed closed.
+    assert store.decide_approval("ap-2", True, now) is False

@@ -111,9 +111,11 @@ All implemented code lives in the single package
 | `coding/interfaces.py`, `coding/limits.py`, `coding/errors.py` | `CodingProvider`, `CodingLimits`, `CodingOperation`, structured errors | Bounded analysis, edit-proposal, test-planning, and diagnostics contract; `CODING_*` settings are hard-clamped. The analysis/planning operations are LOW-risk; patch application is MEDIUM permission-gated. There is still no arbitrary code execution, compiler invocation, package installation, or host test execution. | IMPLEMENTED |
 | `coding/runtime.py`, `coding/diagnostics.py` | `CodingAnalysisRuntime`, `CodeDiagnosticsEngine` | Workspace-scoped read-only discovery and deterministic bounded Python/JavaScript/TypeScript syntax/style diagnostics; no code execution, compiler, or external provider. Diagnostics apply shared `CodingLimits`. | IMPLEMENTED |
 | `coding/mock.py` | `MockCodingProvider` | Deterministic offline mock with optional sanitized failure/timeout simulation. It only consumes supplied snapshots and returns proposals/plans; it has no filesystem, network, process, compiler, or test-run capability. | IMPLEMENTED |
+| `coding/patches.py` | `CodingPatchRuntime` | Separate MEDIUM permission-gated application of structural full-file patches: targets re-resolve through the `Workspace`/project boundary, live files must match the patch's SHA-256/size preconditions, writes are atomic, and an all-or-nothing preflight prevents partial application. Denied or stale patches change nothing. | IMPLEMENTED |
+| `media/` | `MediaRequest`, `MediaArtifact`, `MediaRuntime`, `ImageGenerator`/`VideoGenerator` protocols, `MockMediaGenerator` | Bounded provider-neutral image/video generation foundation. The runtime writes only sanitized filenames under the configured output root (no absolute paths, `..`, separators, or traversal), enforces a hard artifact size cap, and records size + SHA-256 metadata. Only deterministic offline mocks are bundled; no external media API is wired in. | IMPLEMENTED |
 | `agent.py` | `Agent` | Facade wiring planner + registry + permissions + events + executor into canonical `run(request)`. Voice uses the same loop once; Phase 6 computer, Phase 7 vision, and Phase 9 browser tools are opt-in with explicitly supplied providers. Browser tools share the Agent's event bus and permission manager. | IMPLEMENTED |
 
-Entry points: `apps/backend/src/main.py` for the bounded API service and the bundled static web UI. The demo/mock path remains available without an API key.
+Entry points: `apps/backend/src/api.py` runs the bounded HTTP/WebSocket API service (FastAPI) with the bundled static web UI, durable SQLite task/approval persistence, and a background task pool; `apps/backend/src/main.py` remains the single-request CLI demo. The demo/mock path stays available without an API key.
 
 ---
 
@@ -521,10 +523,11 @@ These are **NOT IMPLEMENTED** and must not be added prematurely
   Phase 9 adds only fixed browser operations in D23. The Playwright URL checks
   are not a domain/SSRF allowlist. There is no shell, process launch, arbitrary
   code execution, remote desktop, screenshot persistence, or generic computer
-  or browser action tool. Phase 10 Steps 1–3 provide coding contracts, a mock,
-  a bounded read-only local analyzer, and deterministic diagnostics; patch
-  application, source writes, command use, and test/build execution are NOT
-  IMPLEMENTED.
+  or browser action tool. Phase 10 provides coding contracts, a mock, a
+  bounded read-only local analyzer, deterministic diagnostics, and a separate
+  MEDIUM permission-gated patch application runtime with SHA-256/size
+  preconditions and all-or-nothing preflight; command use, compilers, package
+  installation, and test/build execution are NOT IMPLEMENTED.
 - Output verification beyond "all steps completed" (a richer `Verifier`).
 - Human-facing approval channel (CLI prompt / UI); a synchronous approval
   callback protocol exists and is fail-safe.
@@ -533,23 +536,30 @@ These are **NOT IMPLEMENTED** and must not be added prematurely
   Phase 8 voice and the bounded Phase 9 browser foundations are implemented;
   only actual audio hardware, unrestricted browsing, and external voice
   providers remain future work.
-- Image/video generation and presentation/document *generation*. (Reading &
-  analyzing existing documents — TXT/MD/PDF/DOCX/PPTX/XLSX — is IMPLEMENTED
-  in Phase 4; producing new documents is not.)
+- Real external media providers. (Phase 11 supplies a provider-neutral,
+  bounded image/video *foundation* — request/artifact models, deterministic
+  offline mocks, and an output-bounded artifact writer — but no cloud media
+  API is wired in.) Presentation/document *generation* is NOT IMPLEMENTED.
+  (Reading & analyzing existing documents — TXT/MD/PDF/DOCX/PPTX/XLSX — is
+  IMPLEMENTED in Phase 4; producing new documents is not.)
 - **Semantic/vector** retrieval (embeddings) for documents *or* memory.
   Phase 4 document retrieval and Phase 5 memory retrieval are deliberately
   *lexical* and deterministic (in-memory `KnowledgeStore` behind the
   `RetrievalIndex` protocol; `InMemoryMemoryStore`/`LexicalMemoryRetriever`
   behind the `MemoryStore`/`MemoryRetriever` protocols); a vector/embedding
   backend is a future phase that plugs into those same protocols.
-- **Persistent (durable) memory** across process restarts. Phase 5 memory
-  is in-process only (`InMemoryMemoryStore`); a durable backend (e.g.
-  SQLite) is a future phase that implements the `MemoryStore` protocol.
-- Task Manager layer (task persistence, queueing, multi-task scheduling).
-- User interface and API layer (HTTP/WebSocket).
-- `WAITING_FOR_USER`, `PAUSED`, `TASK_PAUSED`, `TASK_RESUMED` are **modeled**
-  in the state machine but not yet *driven* by any implemented flow (the
-  approval flow is synchronous today).
+- Durable memory is IMPLEMENTED (`SQLiteMemoryStore` behind the unchanged
+  `MemoryStore` protocol; `Agent.create_configured` defaults to it). A
+  vector/embedding backend remains future work (see above).
+- The Task Manager layer (durable SQLite task/event/approval persistence, a
+  bounded background task pool, and the FastAPI HTTP/WebSocket API) and the
+  bundled static web UI live in `apps/backend` (Phase 12), outside this
+  package. Distributed queueing/multi-process scheduling is NOT IMPLEMENTED.
+- `WAITING_FOR_USER` is driven end-to-end by the Phase 12 API approval flow
+  (durable approval records, HTTP approve/deny, bounded wait, wake-up and
+  resume; on timeout the approval expires and the step fails closed).
+  `PAUSED`, `TASK_PAUSED`, and `TASK_RESUMED` remain **modeled** in the
+  state machine but are not yet *driven* by any implemented flow.
 
 ---
 

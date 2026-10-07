@@ -250,7 +250,10 @@ User Request → Agent → Planner → Tool Registry → Mock Tool → Result �
 ├── apps/
 │   └── backend/
 │       ├── src/main.py          # demo entry point (provider via MODEL_PROVIDER)
-│       └── tests/test_main.py   # smoke test for the entry point
+│       ├── src/api.py           # FastAPI app: tasks/events/approvals + static UI
+│       ├── src/task_store.py    # durable SQLite task/event/approval store
+│       ├── src/static/          # bundled web UI (HTML/CSS/JS, no build step)
+│       └── tests/               # API, task-store, and entry-point tests
 ├── packages/
 │   └── agent-core/              # the only importable package (src layout)
 │       ├── src/agent_core/
@@ -270,8 +273,8 @@ User Request → Agent → Planner → Tool Registry → Mock Tool → Result �
 │       │   ├── documents/       # normalized model, parser registry, chunking,
 │       │   │                    #   retrieval (Phase 4)
 │       │   ├── document_tools/  # inspect/extract/index/search tools (Phase 4)
-│       │   ├── memory/          # Memory model, MemoryStore, lexical retrieval,
-│       │   │                    #   limits, secret guard (Phase 5)
+│       │   ├── memory/          # Memory model, MemoryStore (in-memory + durable
+│       │   │                    #   SQLite), lexical retrieval, limits (Phase 5)
 │       │   ├── memory_tools/    # remember/recall/update/forget/list tools (Phase 5)
 │       │   ├── rag/             # ContextBuilder: bounded memory+document context
 │       │   ├── computer/        # provider-neutral computer runtime + Windows adapter (Phase 6)
@@ -279,6 +282,9 @@ User Request → Agent → Planner → Tool Registry → Mock Tool → Result �
 │       │   ├── vision/          # ephemeral observation + pixel verification (Phase 7)
 │       │   ├── voice/           # bounded provider-neutral STT/TTS foundation (Phase 8)
 │       │   ├── browser/         # fixed safe browser operations + optional Playwright (Phase 9)
+│       │   ├── coding/          # bounded coding models, analyzer, diagnostics,
+│       │   │                    #   and permission-gated patch runtime (Phase 10)
+│       │   ├── media/           # bounded provider-neutral image/video foundation (Phase 11)
 │       │   ├── tool_runtime.py  # ToolRuntime (permission-gated execution)
 │       │   ├── errors.py        # exception hierarchy
 │       │   └── providers/
@@ -326,7 +332,22 @@ pytest
 
 # 4. Run the end-to-end demo (mock provider by default, no API keys)
 python apps/backend/src/main.py "Run the demo tool."
+
+# 5. Run the HTTP API + bundled web UI (default: http://127.0.0.1:8000)
+pip install fastapi "uvicorn[standard]"
+cd apps/backend/src
+uvicorn api:app
 ```
+
+The API exposes `GET /health`, task submission and inspection
+(`POST /tasks`, `GET /tasks`, `GET /tasks/{id}`, `GET /tasks/{id}/events`),
+a WebSocket event stream (`/tasks/{id}/events/stream`), and the durable
+approval workflow (`GET /approvals`, `POST /approvals/{id}`). Tasks run in a
+bounded background pool; a MEDIUM/HIGH tool step parks the task in
+`WAITING_FOR_USER`, persists an approval record, and resumes (or fails
+closed) when the user approves, denies, or the bounded wait expires. The
+bundled UI renders task state, the live event stream, and pending
+approvals with Approve/Deny buttons.
 
 ### Using a real model (optional)
 
@@ -389,14 +410,17 @@ pytest            # full test suite
 A second real provider adapter (Anthropic, local models), streaming,
 semantic/vector retrieval (the Phase 4 document and Phase 5 memory
 retrieval are lexical by design and swappable via the `RetrievalIndex` and
-`MemoryRetriever` protocols), durable (persisted) memory beyond the
-process lifetime, generic web fetch/search, shell/command execution,
-unrestricted browser autonomy (Phase 9 supplies only explicit bounded
-operations), real microphone capture, external/cloud STT/TTS providers,
-semantic vision/OCR/remote vision APIs, image/video generation,
-presentation/document generation, and a user interface are all **future
-phases**. Phase 8 includes only provider-neutral voice transport and local
-deterministic mocks. Phase 7 includes only local pixel comparison over Phase
-6 screenshots; computer and browser tools remain bounded, explicit primitives
-and do not enable unrestricted autonomy.
-Adding new capabilities is explicitly gated in [ROADMAP.md](ROADMAP.md).
+`MemoryRetriever` protocols), generic web fetch/search, shell/command
+execution, unrestricted browser autonomy (Phase 9 supplies only explicit
+bounded operations), real microphone capture, external/cloud STT/TTS
+providers, semantic vision/OCR/remote vision APIs, presentation/document
+generation, and unrestricted host command/code execution are all **future
+phases**. Durable memory (`SQLiteMemoryStore`), bounded media generation
+(mock providers only), and the bundled web UI/API/task manager are
+implemented as bounded foundations; real external media providers and a
+richer client UI remain future work. Phase 8 includes only provider-neutral
+voice transport and local deterministic mocks. Phase 7 includes only local
+pixel comparison over Phase 6 screenshots; computer and browser tools
+remain bounded, explicit primitives and do not enable unrestricted
+autonomy. Adding new capabilities is explicitly gated in
+[ROADMAP.md](ROADMAP.md).
