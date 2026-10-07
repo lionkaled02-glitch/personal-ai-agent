@@ -750,7 +750,7 @@ issue (do not post secrets or proof-of-concept exploit details publicly).
 | Memory + document content as untrusted data: injection never triggers tools, permissions, or approval bypass | IMPLEMENTED |
 | RAG context: bounded (chars/items), deterministic order, provenance-labeled, explicit omission reporting; no answer generation | IMPLEMENTED |
 | Document-originated metadata not trusted as memory provenance | IMPLEMENTED |
-| Memory layer third-party import whitelist (stdlib + pydantic; no new exec/network/DB capability) | IMPLEMENTED |
+| Memory layer dependency boundary (stdlib + pydantic core; no exec/network capability; SQLite persistence is an explicit stdlib adapter) | IMPLEMENTED |
 | remember events/confirmations carry metadata only (no content); all memory I/O in events bounded | IMPLEMENTED |
 | Computer provider-neutral models/runtime with strict caps; no provider auto-created | IMPLEMENTED |
 | Closed computer tool set (6 LOW observations, 8 MEDIUM interactions); no generic arbitrary-action tool | IMPLEMENTED |
@@ -786,8 +786,9 @@ issue (do not post secrets or proof-of-concept exploit details publicly).
 | Bounded, idempotent retry for transient provider failures | IMPLEMENTED |
 | Untrusted model output: strict JSON + plan schema + tool allow-list | IMPLEMENTED |
 | Operational-only events/logs, bounded payloads | IMPLEMENTED |
-| Synchronous human approval channel | PLANNED (wire-up in Phase 2) |
-| Persistent, redaction-aware audit log | PLANNED (Phase 12) |
+| Core synchronous approval callback + Phase 12 durable asynchronous approval flow | IMPLEMENTED |
+| Durable task/event/approval persistence | IMPLEMENTED |
+| Separate append-only, redaction-aware audit log | NOT IMPLEMENTED |
 | Broader, separately reviewed computer workflows | NOT IMPLEMENTED (future; explicit named operations only) |
 | Bounded Phase 9 browser foundation (fixed tools, opt-in provider, bounded permissions/verification) | IMPLEMENTED |
 | Phase 10 Steps 1–3 coding models/provider contract/mock, bounded read-only runtime, and deterministic diagnostics; no real provider | IMPLEMENTED |
