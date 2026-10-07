@@ -497,7 +497,7 @@ The user-facing shell and durable task management.
 | FastAPI HTTP task API and WebSocket event streaming | IMPLEMENTED |
 | Backend smoke tests and repository CI quality gates | IMPLEMENTED |
 | User interface (bundled web UI) | IMPLEMENTED — static task submission, task state/events, and approval controls |
-| Drive `WAITING_FOR_USER` / `PAUSED` / resume (async approvals) | IMPLEMENTED — durable approval records, HTTP approve/deny endpoints, bounded waiter, state transitions, and wake-up are wired |
+| Drive `WAITING_FOR_USER` / resume (async approvals) | IMPLEMENTED — durable approval records, HTTP approve/deny endpoints, bounded waiter, state transitions, wake-up, and timeout expiry are wired. `PAUSED` remains modeled but undriven (see limitations below) |
 
 **Known limitations:**
 

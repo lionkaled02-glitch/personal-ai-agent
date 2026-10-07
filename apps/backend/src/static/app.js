@@ -27,6 +27,13 @@ function addEvent(event) {
   eventsBox.scrollTop = eventsBox.scrollHeight;
 }
 
+function permissionLabel(level) {
+  if (level === 1) return "LOW";
+  if (level === 2) return "MEDIUM";
+  if (level === 3) return "HIGH";
+  return "LEVEL " + String(level);
+}
+
 function renderApprovals(approvals) {
   approvalsBox.replaceChildren();
   for (const approval of approvals) {
@@ -36,7 +43,8 @@ function renderApprovals(approvals) {
     title.textContent = approval.tool_name || "tool";
     const meta = document.createElement("small");
     meta.textContent =
-      " " + (approval.reason || "") +
+      " " + permissionLabel(approval.permission_level) +
+      " — " + (approval.reason || "") +
       " — " + (approval.status || "PENDING");
     card.append(title, meta);
     if (approval.status === "PENDING") {
