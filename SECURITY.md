@@ -35,9 +35,11 @@ tool is ever run.
 ### Approval flow
 
 `REQUIRES_APPROVAL` ⇒ an `APPROVAL_REQUIRED` event is emitted and the
-configured `ApprovalCallback` is asked. Approval is **synchronous** in the
-current phase. `WAITING_FOR_USER` / async approvals (a UI a human acts on
-later) are modeled in the state machine but **NOT IMPLEMENTED** yet.
+configured approval path is invoked. The core supports a synchronous
+`ApprovalCallback`; the Phase 12 backend additionally persists approval
+requests and drives `WAITING_FOR_USER` through its HTTP approval endpoints.
+A pending approval is bounded by the backend waiter timeout and fails closed
+if it is not decided.
 
 ---
 
@@ -86,9 +88,9 @@ no hard-coded secrets, no committed credentials, no secrets in logs/events.
 - **Workspace tool events carry only relative workspace paths** (POSIX
   style) and metadata (size, count, error code) — never the absolute host
   path and never directory listings of the host.
-- A future persistent audit log (Phase 12) will serialize
-  `AgentEvent.to_dict()` — the on-disk format is fixed now so it can be made
-  append-only and redaction-aware later.
+- The Phase 12 backend persists task snapshots, agent events, and approval
+records in SQLite. This is durable task/event/approval storage; a separate
+append-only, redaction-aware audit-log format is not claimed beyond that.
 
 ---
 
@@ -315,7 +317,10 @@ model:
   new threat model, named tool schemas, scope-specific permission checks, and
   verification; shell/command execution, remote desktop, arbitrary actions,
   and security bypasses are outside this project's permitted scope.
-- Any UI/API needs authn/authz and input validation (Phase 12).
+- Any deployed UI/API that is exposed beyond a trusted local environment needs
+additional authentication/authorization and deployment-level access controls.
+The bundled Phase 12 API validates inputs and is intentionally a local/dev
+foundation; application authentication is not implemented.
 - Vector/semantic retrieval (embeddings) and persistent memory must preserve
   the lexical-index guarantees above (deterministic, bounded, provider-
   neutral) when built on the `RetrievalIndex` protocol (documents) and the
@@ -692,9 +697,9 @@ not wired into `Agent`.
   hashes, sizes, counts, symbols, and bounded diagnostics—not source contents.
 - **Patch boundary.** Changes are full-file replacement proposals with the
   original SHA-256 and byte size as preconditions. Provider-supplied
-  validation status is advisory. Steps 1–3 do not write or apply patches; a
-  future write path must revalidate live source and use existing permission
-  policy.
+  validation status is advisory. The separate patch runtime revalidates live
+  source, requires MEDIUM permission, performs all-or-nothing preflight, and
+  writes atomically. It never executes source text.
 - **No execution.** Test plans have no command field and enforce
   `execution_performed=False`. The package has no shell/process, compiler,
   package-installer, test/build runner, arbitrary code execution, network, or
@@ -787,6 +792,7 @@ issue (do not post secrets or proof-of-concept exploit details publicly).
 | Bounded Phase 9 browser foundation (fixed tools, opt-in provider, bounded permissions/verification) | IMPLEMENTED |
 | Phase 10 Steps 1–3 coding models/provider contract/mock, bounded read-only runtime, and deterministic diagnostics; no real provider | IMPLEMENTED |
 | Coding source/path bounds through `Workspace`, hash-precondition proposals, metadata-only observations | IMPLEMENTED |
-| Coding write/apply, shell/process, arbitrary code, compiler, package install, test/build execution | NOT IMPLEMENTED (explicitly excluded) |
+| Coding shell/process, arbitrary code, compiler, package install, test/build execution | NOT IMPLEMENTED (explicitly excluded) |
+| Coding patch write/apply with live hash/size preconditions and permission gating | IMPLEMENTED |
 | Unrestricted browser autonomy, host allowlist, and SSRF/DNS-rebinding defense | NOT IMPLEMENTED (documented limitation) |
-| UI/API authentication | NOT IMPLEMENTED (Phase 12) |
+| UI/API authentication | NOT IMPLEMENTED (deployment hardening) |
