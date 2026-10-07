@@ -16,6 +16,8 @@ build/
 data/uploads/*
 data/generated/*
 data/workspace/*
+data/*.sqlite3
+apps/backend/src/data/
 !data/uploads/.gitkeep
 !data/generated/.gitkeep
 !data/workspace/.gitkeep

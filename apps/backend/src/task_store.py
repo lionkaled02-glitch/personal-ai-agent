@@ -135,6 +135,21 @@ class TaskStore:
             )
             return cur.rowcount == 1
 
+    def expire_approval(self, approval_id: str, decided_at: str) -> bool:
+        """Expire a still-pending approval whose bounded wait elapsed.
+
+        An expired approval can no longer be approved or denied through the
+        API; the flow already failed closed. Returns True when a pending
+        record was expired.
+        """
+        with self._lock, self._connect() as db:
+            cur = db.execute(
+                """UPDATE approvals SET status='EXPIRED', decided_at=?
+                   WHERE id=? AND status='PENDING'""",
+                (decided_at, approval_id),
+            )
+            return cur.rowcount == 1
+
     def get_approval(self, approval_id: str) -> dict[str, Any] | None:
         with self._lock, self._connect() as db:
             row = db.execute("SELECT * FROM approvals WHERE id=?", (approval_id,)).fetchone()
