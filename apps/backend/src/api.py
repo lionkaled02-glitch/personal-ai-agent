@@ -77,8 +77,6 @@ def _run_task(task_id: str, request: TaskRequest) -> str:
             task_id=task_id,
         )
     except Exception:
-        # Keep the durable shell truthful if a worker fails outside Agent.run's
-        # controlled error handling.
         task = store.get_task(task_id)
         if task is not None and not task.is_terminal():
             task.error = "task execution failed"
@@ -97,7 +95,6 @@ def health() -> dict[str, str]:
 @app.post("/tasks", status_code=202)
 def create_task(request: TaskRequest) -> dict[str, str]:
     task_id = str(uuid.uuid4())
-    # Persist a durable shell before handing work to the executor.
     store.save_task(
         Task(
             id=task_id,
@@ -186,8 +183,6 @@ async def event_stream(websocket: WebSocket, task_id: str) -> None:
 
 
 # The bundled UI is intentionally static and contains no credentials or privileged logic.
-app.mount(
-    "/",
-    StaticFiles(directory=Path(__file__).resolve().parent / "static", html=True),
-    name="ui",
-)
+static_dir = Path(__file__).resolve().parent / "static"
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+app.mount("/", StaticFiles(directory=static_dir, html=True), name="ui")
