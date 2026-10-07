@@ -493,11 +493,11 @@ Each decision lists the *why*, per the AGENTS.md rule to document decisions.
   repository/provider text as untrusted, and represents edits as full-file
   replacements with source-hash preconditions. Step 2 adds local read-only
   analysis through `Workspace`; Step 3 adds deterministic diagnostics over
-  those validated snapshots only. Neither step writes or executes source text
-  or makes network calls. Reusing `Workspace.resolve()` keeps path safety in
-  one place. Patch application, commands/tests, and real providers remain out
-  of scope. Any future write must be a separate explicit operation using the
-  existing permission system.
+  those validated snapshots only. Neither analysis nor diagnostics executes
+  source text or makes network calls. Reusing `Workspace.resolve()` keeps path
+  safety in one place. Patch application is a separate MEDIUM permission-gated
+  mutation with live hash/size preconditions, all-or-nothing preflight, and
+  atomic writes; commands/tests and real providers remain out of scope.
 
 ---
 
