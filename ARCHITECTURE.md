@@ -387,8 +387,8 @@ Each decision lists the *why*, per the AGENTS.md rule to document decisions.
   never silent.
 - **D18 — Memory is explicit, typed, provider-neutral, and policy-enforced
   at the store layer.** Phase 5 adds a `Memory` model + `MemoryStore`
-  protocol with the required `InMemoryMemoryStore` (no external DB, no
-  network). Key choices: (a) **creation is explicit** — a MEDIUM-permission
+  protocol with both `InMemoryMemoryStore` and durable local `SQLiteMemoryStore`
+  implementations (no network). Key choices: (a) **creation is explicit** — a MEDIUM-permission
   `remember` tool (or a clearly defined trusted internal pathway); nothing
   auto-saves conversation text, so there is no implicit privacy loss and no
   unbounded growth; (b) **identity is deterministic** — ids are pure
@@ -532,23 +532,24 @@ These are **NOT IMPLEMENTED** and must not be added prematurely
   Phase 8 voice and the bounded Phase 9 browser foundations are implemented;
   only actual audio hardware, unrestricted browsing, and external voice
   providers remain future work.
-- Image/video generation and presentation/document *generation*. (Reading &
-  analyzing existing documents — TXT/MD/PDF/DOCX/PPTX/XLSX — is IMPLEMENTED
-  in Phase 4; producing new documents is not.)
+- Presentation/document *generation*. (Reading & analyzing existing documents —
+  TXT/MD/PDF/DOCX/PPTX/XLSX — is IMPLEMENTED in Phase 4; producing new
+  documents is not.) Image/video generation has a bounded provider-neutral
+  foundation in Phase 11; real external providers remain optional.
 - **Semantic/vector** retrieval (embeddings) for documents *or* memory.
   Phase 4 document retrieval and Phase 5 memory retrieval are deliberately
   *lexical* and deterministic (in-memory `KnowledgeStore` behind the
   `RetrievalIndex` protocol; `InMemoryMemoryStore`/`LexicalMemoryRetriever`
   behind the `MemoryStore`/`MemoryRetriever` protocols); a vector/embedding
   backend is a future phase that plugs into those same protocols.
-- **Persistent (durable) memory** across process restarts. Phase 5 memory
-  is in-process only (`InMemoryMemoryStore`); a durable backend (e.g.
-  SQLite) is a future phase that implements the `MemoryStore` protocol.
-- Task Manager layer (task persistence, queueing, multi-task scheduling).
+- Semantic/vector memory retrieval remains future work. Durable local memory
+  is implemented by `SQLiteMemoryStore` behind the `MemoryStore` protocol; the
+  in-memory implementation remains available for demos and tests.
+- Multi-task scheduling beyond the current bounded background executor; task
+  persistence, events, approvals, and WebSocket streaming are implemented.
 - User interface and API layer (HTTP/WebSocket).
-- `WAITING_FOR_USER`, `PAUSED`, `TASK_PAUSED`, `TASK_RESUMED` are **modeled**
-  in the state machine but not yet *driven* by any implemented flow (the
-  approval flow is synchronous today).
+- `PAUSED`, `TASK_PAUSED`, `TASK_RESUMED` remain modeled but are not yet driven.
+  `WAITING_FOR_USER` is now driven by the durable API approval flow.
 
 ---
 
