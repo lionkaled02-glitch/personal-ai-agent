@@ -193,8 +193,9 @@ memories and Phase 4 document chunks. Memory creation is explicit (never
 automatic); all retrieved memory and document content is untrusted **data**,
 never instructions. Retrieval in this phase is **lexical** (deterministic,
 no embeddings, no external model) behind swappable protocols, so semantic/
-vector retrieval and durable storage remain future phases that plug into
-the same interfaces. See [SECURITY.md](SECURITY.md) for the security model
+vector retrieval remains a future phase that plugs into the same interfaces;
+durable storage is provided by the SQLite-backed `SQLiteMemoryStore` behind
+the unchanged `MemoryStore` protocol. See [SECURITY.md](SECURITY.md) for the security model
 and [ARCHITECTURE.md](ARCHITECTURE.md) §4 (D18–D19) for the design
 decisions.
 
@@ -497,6 +498,20 @@ The user-facing shell and durable task management.
 | Backend smoke tests and repository CI quality gates | IMPLEMENTED |
 | User interface (bundled web UI) | IMPLEMENTED — static task submission, task state/events, and approval controls |
 | Drive `WAITING_FOR_USER` / `PAUSED` / resume (async approvals) | IMPLEMENTED — durable approval records, HTTP approve/deny endpoints, bounded waiter, state transitions, and wake-up are wired |
+
+**Known limitations:**
+
+- Approvals wait for a human decision for a bounded time (default 300s,
+  `APPROVAL_WAIT_TIMEOUT_S` in `apps/backend/src/api.py`). On timeout the
+  record is marked `EXPIRED`, the step fails closed, and the task ends in a
+  terminal state; an expired approval can no longer be decided.
+- `PAUSED` remains modeled in the task state machine but is not driven by
+  any current flow; only `WAITING_FOR_USER` is exercised end-to-end.
+- The bundled UI is a deliberately minimal static console (no build step);
+  it is not a full-featured client. Event history is bounded per request.
+- Background execution uses a bounded in-process thread pool, not a
+  distributed queue; task state and events are durable (SQLite) but a task
+  lost mid-process is not automatically resumed after a restart.
 
 ---
 
